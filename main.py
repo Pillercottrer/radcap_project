@@ -7,59 +7,22 @@ import nltk
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 from PIL import Image
+from sample import main
 
 with open('/home/emil/Python_projects/Jupyter notebooks/data_file_captions.json') as json_file:
     data = json.load(json_file)
 
 print(len(data))
 
-f = h5py.File('data.h5', 'r')
-print(list(f.keys()))
-
-print(f['images'][0].shape)
-print(f['images'][0])
-print(f['labels'].shape)
-print(len(f['labels']))
-print(f['labels'][0,:])
-
 with open('data.json') as json_file:
     data = json.load(json_file)
 
-
+index = 4
 vocab = data['ix_to_word']
 print(vocab)
 
-for i in f['labels'][0,:]:
-    print(vocab.get(str(i)))
-
-index = 4
-
-print(f['label_start_ix'][index])
-print(f['label_end_ix'][index])
-cap_num = f['label_end_ix'][index] - f['label_start_ix'][index]
-
-cap_ind = random.randint(0,cap_num)
-caption = f['labels'][f['label_start_ix'][index],:]
-caption2 = f['labels'][f['label_start_ix'][index]+cap_ind,:]
-
-for i in caption:
-    print(vocab.get(str(i)))
-
-for i in caption2:
-    print(vocab.get(str(i)))
-
 print(torch.cuda.is_available())
 
-
-
-caption = f['labels'][cap_ind,:]
-
-
-print(caption.dtype)
-target = torch.from_numpy(caption.astype(float))
-print(target)
-image = torch.from_numpy(f['images'][index].astype(float))
-print(image)
 
 print(torch.__version__)
 print(torch.rand(2, 3))
@@ -86,4 +49,32 @@ print(image)
 
 print(json_data[index]['filepath'])
 print(json_data[index]['id'] + '.jpg')
+
+with open('test_imgcap.json') as json_file:
+    json_data = json.load(json_file)
+
+
+for i in range(10)[:3]:
+    print(i)
+
+val = json.load(open('./data/annotations/captions_val2017.json', 'r'))
+train = json.load(open('./data/annotations/captions_train2017.json', 'r'))
+
+
+cocoimgs = json.load(open('./coco_raw.json', 'r'))
+
+
+print(cocoimgs[0].keys())
+print(len(cocoimgs))
+print(cocoimgs[0]['file_path'])
+print(cocoimgs[0]['id'])
+print(cocoimgs[0]['captions'])
+
+
+print(len(cocoimgs))
+print(int(round(len(cocoimgs)*0.8)))
+print(len(cocoimgs)*0.2)
+
+
+
 

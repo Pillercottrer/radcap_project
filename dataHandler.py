@@ -13,7 +13,7 @@ import h5py
 class FlickrDataset(data.Dataset):
     """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
 
-    def __init__(self, root, json_path, vocab, transform = None):
+    def __init__(self, root, json_imgs, vocab, transform = None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -29,15 +29,17 @@ class FlickrDataset(data.Dataset):
         self.vocab = vocab
         self.transform = transform
         """
-        with open(json_path) as json_file:
-            self.flicker_data = json.load(json_file)
+
+        """
         f = h5py.File('data.h5', 'r')
         self.label_start_ix = f['label_start_ix']
         self.label_end_ix = f['label_end_ix']
         self.labels = f['labels']
         self.images = f['images']
-        self.vocab = vocab
         self.label_length = f['label_length']
+        """
+        self.img_data = json_imgs
+        self.vocab = vocab
         self.transform = transform
         self.root = root
 
@@ -59,8 +61,10 @@ class FlickrDataset(data.Dataset):
         #caption = self.labels[cap_ind,:]
         #image = self.images[index]
 
-        path = self.flicker_data[index]['id'] + '.jpg'
-        caption = self.flicker_data[index]['captions'][0]
+        #path = self.img_data[index]['id'] + '.jpg'
+        path = self.img_data[index]['file_path']
+        num_cap = len(self.img_data[index]['captions'])
+        caption = self.img_data[index]['captions'][random.randint(0,num_cap-1)]
 
         image = Image.open(os.path.join(self.root, path)).convert('RGB')
         if self.transform is not None:
@@ -101,7 +105,7 @@ class FlickrDataset(data.Dataset):
         return image, target
 
     def __len__(self):
-        return len(self.images)
+        return len(self.img_data)
 
 
 def collate_fn(data):
@@ -134,10 +138,10 @@ def collate_fn(data):
     return images, targets, lengths
 
 
-def get_loader(root, json_path, vocab, transform, batch_size, shuffle, num_workers, ):
+def get_loader(root, json_imgs, vocab, transform, batch_size, shuffle, num_workers, ):
     """Returns torch.utils.data.DataLoader for custom Flicker8k dataset."""
     # Flicker8k caption dataset
-    flickr = FlickrDataset(root = root, json_path = json_path, vocab = vocab, transform = transform)
+    flickr = FlickrDataset(root = root, json_imgs = json_imgs, vocab = vocab, transform = transform)
     # Data loader for Flicker dataset
     # This will return (images, captions, lengths) for each iteration.
     # images: a tensor of shape (batch_size, 3, 224, 224).
