@@ -15,7 +15,6 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 from torch.optim import lr_scheduler
 
-
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -46,8 +45,7 @@ def main(args):
 
     # Split: val, train, test
 
-
-    #COCO
+    # COCO
     """
     cocoimgs = json.load(open('./coco_raw.json', 'r'))
     random.shuffle(cocoimgs)
@@ -63,10 +61,9 @@ def main(args):
     image_datasets['train'] = train_imgs
     image_datasets['val'] = val_imgs
     image_datasets['test'] = test_imgs
-    
+
     """
-    #Flicker
-    """
+    # Flicker
     flicker_trainimgs = json.load(open('./train_imgcap.json', 'r'))
     flicker_testimgs = json.load(open('./test_imgcap.json', 'r'))
     len_train = len(flicker_trainimgs)
@@ -75,27 +72,9 @@ def main(args):
     image_datasets = {}
     image_datasets['train'] = flicker_trainimgs
     image_datasets['val'] = flicker_testimgs
-    #image_datasets['test'] = test_imgs
-    """
-    #Radiology
-    radimgs = json.load(open('./radcap_bodypartsplit_data.json', 'r'))
-    radimgs_ankle = radimgs['ankle']
-    random.shuffle(radimgs_ankle)
-    len_train = int(round(0.7 * len(radimgs_ankle)))
-    len_val = int(round(0.20 * len(radimgs_ankle)))
+    # image_datasets['test'] = test_imgs
 
-    train_imgs = radimgs_ankle[:len_train]
-    val_imgs = radimgs_ankle[len_train:len_train + len_val]
-    test_imgs = radimgs_ankle[len_train + len_val:]
-
-    json.dump(test_imgs, open('ankle_test_data.json', 'w'))
-
-    image_datasets = {}
-    image_datasets['train'] = train_imgs
-    image_datasets['val'] = val_imgs
-    image_datasets['test'] = test_imgs
-
-    #Image preprocessing, normalization for the pretrained resnet
+    # Image preprocessing, normalization for the pretrained resnet
     transform = transforms.Compose([
         transforms.RandomCrop(args.crop_size),
         transforms.RandomHorizontalFlip(),
@@ -107,24 +86,26 @@ def main(args):
     with open(args.vocab_path, 'rb') as f:
         vocab = pickle.load(f)
 
-
-    #with open('data.json') as json_file:
+    # with open('data.json') as json_file:
     #    json_data = json.load(json_file)
-    #vocab = json_data['ix_to_word']
-
-
+    # vocab = json_data['ix_to_word']
 
     # Build data loader
-    dataloaders = {x: get_loader(args.image_dir, image_datasets[x], vocab, data_transforms['train'], args.batch_size, shuffle=True,
-                                 num_workers=args.num_workers)
-                   for x in ['train', 'val']}
+    dataloaders = {
+    x: get_loader(args.image_dir, image_datasets[x], vocab, data_transforms['train'], args.batch_size, shuffle=True,
+                  num_workers=args.num_workers)
+    for x in ['train', 'val']}
 
     dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
-    #class_names = image_datasets['train'].classes
+    # class_names = image_datasets['train'].classes
 
     # Build the models
     encoder = EncoderCNN(args.embed_size).to(device)
     decoder = DecoderRNN(args.embed_size, args.hidden_size, len(vocab), args.num_layers).to(device)
+
+    # Load the trained model parameters
+    encoder.load_state_dict(torch.load(args.encoder_path))
+    decoder.load_state_dict(torch.load(args.decoder_path))
 
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
@@ -134,7 +115,6 @@ def main(args):
     # Decay LR by a factor of 0.1 every 7 epochs
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
 
-
     # Train the models
     since = time.time()
 
@@ -142,13 +122,12 @@ def main(args):
     best_model_decoder_wts = copy.deepcopy(decoder.state_dict())
     lowest_loss = 100000
 
-
+    total_step = len(dataloaders['train'])
     for epoch in range(args.num_epochs):
         print('Epoch {}/{}'.format(epoch, args.num_epochs - 1))
         print('-' * 10)
 
         for phase in ['train', 'val']:
-            total_step = len(dataloaders['train'])
             if phase == 'train':
                 exp_lr_scheduler.step()
                 encoder.train()  # Set model to training mode
@@ -181,10 +160,9 @@ def main(args):
                     print('i: %d' % i)
                     print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, Perplexity: {:5.4f}'
                         .format(epoch, args.num_epochs, i, total_step, loss.item(), np.exp(loss.item())))
-                    
                 """
             # statistics
-            running_loss += loss.item()*images.size(0)
+            running_loss += loss.item() * images.size(0)
             epoch_loss = running_loss / dataset_sizes[phase]
             print('{} Loss: {:.4f}'.format(phase, epoch_loss))
             # deep copy the model
@@ -230,7 +208,6 @@ def main(args):
                     args.model_path, 'encoder-{}-{}.ckpt'.format(epoch + 1, i + 1)))
         """
 
-
     # Save the model checkpoints
     torch.save(best_model_decoder_wts, os.path.join(
         args.model_path, 'decoder-{}-{}.ckpt'.format(epoch + 1, i + 1)))
@@ -240,6 +217,10 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--encoder_path', type=str, default='./models/encoder-10-63.ckpt',
+                        help='path for trained encoder')
+    parser.add_argument('--decoder_path', type=str, default='./models/decoder-10-63.ckpt',
+                        help='path for trained decoder')
     parser.add_argument('--model_path', type=str, default='./models/', help='path for saving trained models')
     parser.add_argument('--crop_size', type=int, default=224, help='size for randomly cropping images')
     parser.add_argument('--vocab_path', type=str, default='./data/vocab.pkl', help='path for vocabulary wrapper')
@@ -255,9 +236,9 @@ if __name__ == '__main__':
     parser.add_argument('--num_layers', type=int, default=1, help='number of layers in lstm')
 
     parser.add_argument('--num_epochs', type=int, default=5)
-    parser.add_argument('--batch_size', type=int, default=20)
+    parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--num_workers', type=int, default=2)
-    parser.add_argument('--learning_rate', type=float, default=0.001)
+    parser.add_argument('--learning_rate', type=float, default=0.00005)
     args = parser.parse_args()
     print(args)
     main(args)

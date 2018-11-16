@@ -15,12 +15,11 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def load_image(image_path, transform=None):
-    image = Image.open(image_path)
+    image = Image.open(image_path).convert('RGB')
     image = image.resize([224, 224], Image.LANCZOS)
 
     if transform is not None:
         image = transform(image).unsqueeze(0)
-
     return image
 
 
@@ -50,6 +49,12 @@ def main(args):
         transforms.Normalize((0.485, 0.456, 0.406),
                              (0.229, 0.224, 0.225))])
 
+    transform_val = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+
 
 
     # Load vocabulary wrapper
@@ -57,8 +62,9 @@ def main(args):
         vocab = pickle.load(f)
 
     # Load json-test-file
-    with open(args.test_json) as json_file:
-        json_test = json.load(json_file)
+    #with open(args.test_json, 'r') as json_file:
+    #    json_test = json.load(json_file)
+    json_test = json.load(open('./ankle_test_data.json', 'r'))
 
 
     # Build models
@@ -72,15 +78,15 @@ def main(args):
     decoder.load_state_dict(torch.load(args.decoder_path))
 
 
-    for jimg in json_test[430:440]:
+    for jimg in json_test[40:50]:
         # Prepare an image
-        image = load_image('./data/' + jimg['file_path'], transform)
+        image = load_image(jimg['file_paths'][0], transform)
         image_tensor = image.to(device)
         cap = generateCaption(image_tensor, vocab, encoder, decoder)
         print('Human cap: %s' % jimg['captions'][0])
         print('AI cap: %s' % cap)
         print('\n')
-        image_show = Image.open('./data/' + jimg['file_path'])
+        image_show = Image.open(jimg['file_paths'][0])
         plt.imshow(np.asarray(image_show))
         plt.show()
 
@@ -103,11 +109,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument('--encoder_path', type=str, default='./models/encoder-10-193.ckpt',
+    parser.add_argument('--encoder_path', type=str, default='./models/encoder-5-335.ckpt',
                         help='path for trained encoder')
-    parser.add_argument('--decoder_path', type=str, default='./models/decoder-10-193.ckpt',
+    parser.add_argument('--decoder_path', type=str, default='./models/decoder-5-335.ckpt',
                         help='path for trained decoder')
-    parser.add_argument('--test_json', type=str, default='./coco_raw.json', help='path for json file with test imgs')
+    parser.add_argument('--test_json', type=str, default='./radcap_data.json', help='path for json file with test imgs')
     parser.add_argument('--vocab_path', type=str, default='./data/vocab.pkl', help='path for vocabulary wrapper')
 
     # Model parameters (should be same as paramters in train.py)

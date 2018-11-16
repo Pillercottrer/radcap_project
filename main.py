@@ -1,5 +1,4 @@
 import json
-import h5py
 import random
 import torch
 import numpy as np
@@ -60,6 +59,7 @@ for i in range(10)[:3]:
 val = json.load(open('./data/annotations/captions_val2017.json', 'r'))
 train = json.load(open('./data/annotations/captions_train2017.json', 'r'))
 
+"""
 
 cocoimgs = json.load(open('./coco_raw.json', 'r'))
 
@@ -75,6 +75,8 @@ print(len(cocoimgs))
 print(int(round(len(cocoimgs)*0.8)))
 print(len(cocoimgs)*0.2)
 
+
+"""
 
 
 

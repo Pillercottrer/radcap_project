@@ -5,7 +5,6 @@ import argparse
 from random import shuffle, seed
 
 #special
-import h5py
 import numpy as np
 from scipy.misc import imread, imresize
 unknown_token = "<unk>"

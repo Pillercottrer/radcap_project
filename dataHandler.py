@@ -62,11 +62,14 @@ class FlickrDataset(data.Dataset):
         #image = self.images[index]
 
         #path = self.img_data[index]['id'] + '.jpg'
-        path = self.img_data[index]['file_path']
+
+        num_imgs = len(self.img_data[index]['file_paths'])
+        path = self.img_data[index]['file_paths'][random.randint(0,num_imgs-1)]
         num_cap = len(self.img_data[index]['captions'])
         caption = self.img_data[index]['captions'][random.randint(0,num_cap-1)]
 
-        image = Image.open(os.path.join(self.root, path)).convert('RGB')
+        #image = Image.open(os.path.join(self.root, path)).convert('RGB')
+        image = Image.open(path).convert('RGB')
         if self.transform is not None:
             image = self.transform(image)
 
@@ -108,6 +111,42 @@ class FlickrDataset(data.Dataset):
         return len(self.img_data)
 
 
+
+def make_weights_for_balanced_classes(images, nclasses):
+    count = [0] * nclasses
+    for item in images:
+        count[item[1]] += 1
+    weight_per_class = [0.] * nclasses
+    N = float(sum(count))
+    for i in range(nclasses):
+        weight_per_class[i] = N/float(count[i])
+    weight = [0] * len(images)
+    for idx, val in enumerate(images):
+        weight[idx] = weight_per_class[val[1]]
+    return weight
+
+def make_weights_for_balanced_classes(json_imgs, nclasses):
+    count = [0] * nclasses
+    for item in json_imgs:
+        if item['fracture'] == str(1): #hard coded classes '0' and '1'
+            count[1] += 1
+        else:
+            count[0] += 1
+
+    weight_per_class = [0.] * nclasses
+    N = float(sum(count))
+    for i in range(nclasses):
+        weight_per_class[i] = N/float(count[i])
+    weight = [0] * len(json_imgs)
+
+    for idx, img in enumerate(json_imgs):
+        if img['fracture'] == 1:
+            weight[idx] = weight_per_class[1]
+        else:
+            weight[idx] = weight_per_class[0]
+    return weight
+
+
 def collate_fn(data):
     """Creates mini-batch tensors from the list of tuples (image, caption).
 
@@ -147,9 +186,14 @@ def get_loader(root, json_imgs, vocab, transform, batch_size, shuffle, num_worke
     # images: a tensor of shape (batch_size, 3, 224, 224).
     # captions: a tensor of shape (batch_size, padded_length).
     # lengths: a list indicating valid length for each caption. length is (batch_size).
+
+    weights = make_weights_for_balanced_classes(json_imgs, 2)
+    weights = torch.DoubleTensor(weights)
+    sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
+
     data_loader = torch.utils.data.DataLoader(dataset=flickr,
                                               batch_size=batch_size,
-                                              shuffle=shuffle,
+                                              sampler=sampler,
                                               num_workers=num_workers,
                                               collate_fn=collate_fn)
     return data_loader
