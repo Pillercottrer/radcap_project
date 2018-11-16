@@ -95,50 +95,59 @@ class CoAttention(nn.Module):
         return ctx
 
 class TagConcatTable(nn.Module):
-    def ___init__(self, tags, input_dim):
-        super(tmp, self).__init__()
+    def __init__(self, tags, input_dim):
+        super(TagConcatTable, self).__init__()
         self.subnetworks = {}
         for tag in tags:
             self.subnetworks[tag] = nn.Sequential(
                 nn.Linear(input_dim, 2),
-                nn.Softmax())
+                nn.Softmax(dim = 1)).cuda()
 
     def forward(self, x):
         if len(x.shape) != 2:
             raise Exception('Wrong input shape: {}'.format(x.shape))
 
-        ret = torch.zero([x.shape[0], len(self.subnetworks), 2])
+        ret = torch.zeros([x.shape[0], len(self.subnetworks), 2]).to(device)
         for i, tag in enumerate(self.subnetworks.keys()):
-            ret[:, i, :] = self.subnetwoks[tag](x)
+            ret[:, i, :] = self.subnetworks[tag](x)
         return ret
 
     def init_weights(self):
         for tag in self.subnetworks.keys():
-            self.subnetworks[tag].bias.data.fill_(0)
-            self.subnetworks[tag].weight.data.uniform_(-0.1, 0.1)
+            self.subnetworks[tag][0].bias.data.fill_(0)
+            self.subnetworks[tag][0].weight.data.uniform_(-0.1, 0.1)
 
 
 class MLC(nn.Module):
 
-    def __init__(self, num_pixels, encoder_dimension, tags: List[str], vocab_size, embedding):  #from features a single fully connected layer computes tags.
+    def __init__(self, num_pixels, encoder_dimension, embedding, vocab, tags=['Fracture', 'Implant', 'Tumor', 'Osteoarthritis']):  #from features a single fully connected layer computes tags.
         print('lalal')
         super(MLC, self).__init__()
         self.encoder_dimension = encoder_dimension
         self.num_pixels = num_pixels
-        self.embedding = embedding # Word embedding
+        self.embedding = embedding# Word embedding
+        self.vocab = vocab
 
         self.mlc = TagConcatTable(tags=tags, input_dim=encoder_dimension*num_pixels)
         self.tags = tags
+        self.tags_translate = {}
+        for tag in tags:
+            self.tags_translate[tag] = vocab(tag)
 
-    def get_tag_embeddings(self, tags):
-        Embedding(tags)
+        self.init_weights()
+
+    def get_tag_embeddings(self, indices):
+        for i in range(len(indices)):
+            for j in range(len(indices[i])):
+                indices[i,j] =self.vocab(self.tags_translate[self.tags[indices[i, j]]])
+        return self.embedding(indices)
 
     def init_weights(self):
         """
         Initializes some parameters with values from the uniform distribution, for easier convergence.
         """
         self.mlc.init_weights()
-        self.embedding.weight.data.uniform_(-0.1, 0.1)
+        #self.embedding.weight.data.uniform_(-0.1, 0.1)
 
 
     def forward(self, visual_features):
@@ -154,9 +163,9 @@ class MLC(nn.Module):
                                 dim=1,
                                 descending=True)
 
+        # 0 = 'Fracture', 1 = 'Implant', 2 = 'Tumor', 3 = 'Osteoarthritis'
 
-        indices.squeeze() #dim(batch,size, num_tags)
-        select_tags = self.tags[indices]
+        select_tags = self.get_tag_embeddings(indices)
 
 
 
@@ -167,7 +176,7 @@ class MLC(nn.Module):
 
 
 class Embedding(nn.Module):
-    def __init__(self, vocab_size, embed_dim):
+    def __init__(self, vocab_size, embed_dim = 100):
         super(Embedding, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim)
         self.init_weights()
@@ -201,7 +210,7 @@ class Embedding(nn.Module):
 
 class SentenceLSTMDecoder(nn.Module):
 
-    def __init__(self, vocab_size, num_pixels=196, ctx_attention_dim=512, semantic_embed_dim = 512, hidden_dim=512, encoder_visual_dim=2048, ctx_dim = 100,
+    def __init__(self, vocab_size, embedding, num_pixels=196, ctx_attention_dim=512, semantic_embed_dim = 512, hidden_dim=512, encoder_visual_dim=2048, ctx_dim = 100,
                  tags=['Fracture', 'Implant', 'Tumor', 'Osteoarthritis'], t_dim = 111, stop_dim=100, max_sents=8, dropout=0.5):
         """
         :param attention_dim: size of attention network
@@ -224,7 +233,7 @@ class SentenceLSTMDecoder(nn.Module):
 
         self.attention = CoAttention(encoder_visual_dim, semantic_embed_dim, ctx_dim, hidden_dim, ctx_attention_dim)  # attention network
 
-        self.embedding = nn.Embedding(vocab_size, semantic_embed_dim)  # embedding layer
+        #self.embedding = nn.Embedding(vocab_size, semantic_embed_dim)  # embedding layer
         self.dropout = nn.Dropout(p=self.dropout)
         self.lstm_sentence = nn.LSTMCell(ctx_dim, hidden_dim, bias=True)  # decoding LSTMCell
         self.init_h = nn.Linear(ctx_dim, hidden_dim)  # linear layer to find initial hidden state of LSTMCell
@@ -240,7 +249,7 @@ class SentenceLSTMDecoder(nn.Module):
         self.max_sentences = max_sents
         self.tags= tags
         self.t_dim = t_dim
-        self.mlc = MLC(num_pixels, encoder_visual_dim, self.tags, self.vocab_size, self.semantic_embed_dim)  # visual_attention dim, encoder_dim, tag_dim. vocab_size, embed_dim
+        self.mlc = MLC(num_pixels, encoder_visual_dim, embedding, self.tags, self.vocab_size)  # visual_attention dim, encoder_dim, tag_dim. vocab_size, embed_dim
 
         self.fc_h_to_t = nn.Linear(hidden_dim, t_dim)
         self.fc_ctx_to_t = nn.Linear(ctx_dim, t_dim)
@@ -300,7 +309,7 @@ class SentenceLSTMDecoder(nn.Module):
         c = torch.zeros(batch_size, self.hidden_dim).to(device)
         return h, c
 
-    def forward(self, encoder_out):
+    def forward(self, visual_features, semantic_features):
         # Multi label classification network
         self.mlc.init_weights()
         tags = self.mlc(encoder_out)
@@ -355,6 +364,7 @@ class WordLSTMDecoder(nn.Module):
         self.max_seg_length = max_seq_length
         self.max_num_sents = max_num_sents
         self.vocab_size = vocab_size
+        self.embedding = Embedding(vocab_size, embed_size)
 
         self.init_h = nn.Linear(topic_vector_size, hidden_size)
         self.init_c = nn.Linear(topic_vector_size, hidden_size)
