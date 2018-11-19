@@ -117,14 +117,15 @@ topic_tensor, stop_tensor = sent_lstm(encoder_out, semantic_features)
 
 word_lstm = WordLSTMDecoder(vocab_size, embedding)
 word_lstm.to(device)
-word_lstm(topic_tensor, num_sents, target_paragraphs, paragraph_sent_lengths)
+predictions = word_lstm(topic_tensor, num_sents, target_paragraphs, paragraph_sent_lengths)
+print('break')
 
 
 
 
 
 
-
+"""
 # Flatten encoding
 encoder_out = encoder_out.view(1, -1, encoder_dim)  # (1, num_pixels, encoder_dim)
 num_pixels = encoder_out.size(1)
@@ -151,3 +152,4 @@ h = h.unsqueeze(0)
 coAttention = CoAttention(encoder_dim, semantic_att_embed_size, 100, 512, 100)
 coAttention.to(device)
 ctx = coAttention(encoder_out, a_att, h)
+"""

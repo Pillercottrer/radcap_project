@@ -411,6 +411,8 @@ class WordLSTMDecoder(nn.Module):
             for l in num_sents:
                 if l > i:
                     batch_size_i += 1
+            if batch_size_i == 0:
+                return predictions
 
             topics = topic_vectors[:batch_size_i,i,:]
             captions = paragraphs[:batch_size_i,i,:]
