@@ -11,9 +11,9 @@ import json
 import h5py
 
 class dataset(data.Dataset):
-    """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
+    """Radiology Dataset compatible with torch.utils.data.DataLoader."""
 
-    def __init__(self, root, json_imgs, vocab, transform = None):
+    def __init__(self, json_imgs, vocab, transform = None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -25,20 +25,16 @@ class dataset(data.Dataset):
         self.img_data = json_imgs
         self.vocab = vocab
         self.transform = transform
-        self.root = root
 
 
     def __getitem__(self, index):
-        """Returns one data pair (image and caption)."""
+        """Returns one data pair (images and paragraph)."""
         vocab = self.vocab
         paths = self.img_data[index]['file_paths'] #radiology
-        num_sents = len(self.img_data[index]['captions'])
-        paragraph = self.img_data[index]['captions']
+        num_sents = len(self.img_data[index]['paragraph'])
+        paragraph = self.img_data[index]['paragraph']
 
-        #image = Image.open(os.path.join(self.root, path)).convert('RGB')
-        image = Image.open(paths[0]).convert('RGB')
-        if self.transform is not None:
-            image = self.transform(image)
+        #IMAGE
         image_tensor = torch.zeros(len(paths), 3, 224, 224)
 
         for i, path in enumerate(paths):
@@ -47,34 +43,49 @@ class dataset(data.Dataset):
                 image = self.transform(image)
             image_tensor[i] = image
 
-        rad_combined_tensor, _ = torch.max(image_tensor, 0)
+        #TAGS
 
-        # Convert caption (string) to word ids.
-        tokens = nltk.tokenize.word_tokenize(str(caption).lower())
-        caption = []
-        caption.append(vocab('<start>'))
-        caption.extend([vocab(token) for token in tokens])
-        caption.append(vocab('<end>'))
-        target = torch.Tensor(caption)
+        #TODO
+        # change to vocab representation of the tag??
+        #return tags aswell
+        tags = [self.img_data[index]['Fracture'], self.img_data[index]['Implant'], self.img_data[index]['Tumor'], self.img_data[index]['Osteoarthritis']]
+
+        #Potential tags
+        #'Filename', 'Exam_id', 'Rprt', 'split_sets', 'split_name', 'Fracture_oblique', 'Fracture_angulation', 'Exam_body_part', 'Exam_view', 'Side', 'Prev_frx', 'Pseudo_arthrosis', 'Dislocation', 'Implant_hip', 'Implant_knee',
+        #'Implant_total_knee', 'Implant_hemi_knee', 'Implant_total_hip', 'Implant_hemi_hip', 'Implant_nail', 'Implant_plate', 'Implant_cerklage_wires', 'Implant_problem', 'Implant_loosening', 'Implant_external_fix', 'Tumor_nof', 'imgs',
+        #'osteo_fg', 'Exam_type', 'Osteoarthritis_revisit', 'Osteoarthritis_other', 'Tumor_benign', 'Tumor_revisit', 'Tumor_infection', 'Other', 'Prosthetic', 'Fracture', 'Fracture_displaced', 'Fracture_undisplaced', 'Fracture_intraarticular',
+        #'Fracture_spiral', 'Fracture_comminute', 'Osteoarthritis', 'Osteoarthritis_severe', 'Osteoarthritis_light', 'Implant', 'Tumor', 'Tumor_osteolytic', 'Tumor_sclerotic', 'Implant_fg', 'file_paths', 'paragraph'
+        """
+        fracture_tagnames_ankle = ['Fracture', 'Fracture_displaced', 'Fracture_undisplaced', 'Fracture_intraarticular', 'Fracture_spiral', 'Fracture_comminute', ]
+        implant_tagnames_ankle = ['Implant', 'Implant_nail', 'Implant_plate', 'Implant_cerklage_wires', 'Implant_problem', 'Implant_loosening', 'Implant_external_fix', 'Implant_hip', 'Implant_knee',
+        'Implant_total_knee', 'Implant_hemi_knee', 'Implant_total_hip', 'Implant_hemi_hip', 'Implant_fg']
+        tumor_tagnames = ['Tumor', 'Tumor_osteolytic', 'Tumor_sclerotic', 'Tumor_benign', 'Tumor_revisit', 'Tumor_infection']
+        """
+
+        #PARAGRAPH
+        allsents = []
         lengths = []
-        if self.img_data[index]['split'] == 'val':
-            allcaps = []
-            for cap in self.img_data[index]['captions']:
-                tokens = nltk.tokenize.word_tokenize(str(cap).lower())
-                caption = []
-                caption.append(vocab('<start>'))
-                caption.extend([vocab(token) for token in tokens])
-                caption.append(vocab('<end>'))
-                allcaps.append(caption)
-                lengths.append(len(caption))
-            all_captions = torch.zeros(len(allcaps), max(lengths)).long()
-            for i, cap in enumerate(allcaps):
-                cap_torch = torch.Tensor(cap)
-                end = lengths[i]
-                all_captions[i, :end] = cap_torch[:end]
-            return image, target, all_captions
-        else:
-            return image, target
+        for sent in paragraph:
+            sent = str(sent).lower()
+            sent = sent.replace("\n", "")
+            tokens = nltk.tokenize.word_tokenize(str(sent).lower())
+            caption = []
+            caption.append(vocab('<start>'))
+            caption.extend([vocab(token) for token in tokens])
+            caption.append(vocab('<end>'))
+            allsents.append(caption)
+            lengths.append(len(caption))
+
+
+        paragraph = torch.zeros(len(allsents), max(lengths)).long()
+        #lengths_tensor = torch.tensor(lengths)
+        for i, cap in enumerate(allsents):
+            cap_torch = torch.Tensor(cap)
+            end = lengths[i]
+            paragraph[i, :end] = cap_torch[:end]
+
+        return image_tensor, paragraph, lengths
+
 
     def __len__(self):
         return len(self.img_data)
@@ -86,80 +97,52 @@ def collate_fn(data):
     We should build custom collate_fn rather than using default collate_fn,
     because merging caption (including padding) is not supported in default.
     Args:
-        data: list of tuple (image, caption).
+        data: list of tuple (images, paragraph, sentence_lengths).
             - image: torch tensor of shape (3, 256, 256).
-            - caption: torch tensor of shape (?); variable length.
+            - paragraph: torch tensor of shape (?); variable length.
+            - sentence_lengths: list of sentence_lengths
     Returns:
         images: torch tensor of shape (batch_size, 3, 256, 256).
         targets: torch tensor of shape (batch_size, padded_length).
         lengths: list; valid length for each padded caption.
     """
-    # Sort a data list by caption length (descending order).
-    data.sort(key=lambda x: len(x[1]), reverse=True)
-    counter = 0
-    for it in zip(*data):
-        if counter == 0:
-            images = it
-        elif counter == 1:
-            captions = it
-        elif counter == 2:
-            all_captions = it
-        elif counter == 3:
-            num_caps = it
-        counter += 1
-
-    # Merge images (from tuple of 3D tensor to 4D tensor).
-    images = torch.stack(images, 0)
-
-    # Merge captions (from tuple of 1D tensor to 2D tensor).
-    lengths = [len(cap) for cap in captions]
-    targets = torch.zeros(len(captions), max(lengths)).long()
-    for i, cap in enumerate(captions):
-        end = lengths[i]
-        targets[i, :end] = cap[:end]
+    images, paragraph, sentence_lengths = zip(*data)
 
 
-    if(counter < 3):
-        return images, targets, lengths
-    else:
-        # Merge all_caps lol
-        allcap_lengths = []
-        num_caps = 0
-        for tup in all_captions:
-            if len(tup) > num_caps:
-                num_caps = len(tup)
-            for ele in tup:
-                allcap_lengths.append(len(ele))
-                break
+    num_imgs = [len(img_tuple) for img_tuple in images]
+    images_tensor = torch.zeros(len(images), max(num_imgs), 3, 224, 224)
 
-        all_cap_tensor = torch.zeros(len(all_captions), max(allcap_lengths), num_caps).long()
+    for i, images_tup in enumerate(images):
+        images_tensor[i, :num_imgs[i], :, : , :] = images_tup
 
-        for i, caps in enumerate(all_captions):
-            end = lengths[i]
-            for j, cap in enumerate(caps):
-                all_cap_tensor[i,:end,j] = cap[:end]
+    max_length = [max(element) for element in sentence_lengths]
+    num_sents = [len(element) for element in sentence_lengths]  #behövs en torch-tensor eller funkar list
+    #num_sents = torch.Tensor(num_sents) # (batch_size)
 
-        return images, targets, lengths, all_cap_tensor
+    sentence_lengths_tensor = torch.zeros(len(sentence_lengths), max(num_sents)) #(batch_size, max_num_sents)
+    for i, ele in enumerate(sentence_lengths):
+        end = len(ele)
+        sentence_lengths_tensor[i, :end] = torch.tensor(ele) # skippa tensor för längder?
 
-def merge_1d_to_2d(tensor):
-    # Merge (from tuple of 1D tensor to 2D tensor).
-    lengths = [len(ele) for ele in tensor]
-    targets = torch.zeros(len(tensor), max(lengths)).long()
-    for i, cap in enumerate(tensor):
-        end = lengths[i]
-        targets[i, :end] = cap[:end]
-    return targets
+    paragraph_tensor = torch.zeros(len(paragraph), max(num_sents), max(max_length)).long()  #batch_size, max_num_sents, max_sent_length
+
+    for i, tup_paragraph in enumerate(paragraph):
+        for j, sent_length in enumerate(sentence_lengths[i]):
+            paragraph_tensor[i, j, :sent_length] = tup_paragraph[j, :sent_length]
+
+
+    return images_tensor, paragraph_tensor, sentence_lengths, num_sents
 
 
 
-def get_loader(root, json_imgs, vocab, transform, batch_size, shuffle, num_workers, ):
-    """Returns torch.utils.data.DataLoader for custom Flicker8k dataset."""
-    # Flicker8k caption dataset
-    dataSet = dataset(root = root, json_imgs = json_imgs, vocab = vocab, transform = transform)
-    # Data loader for Flicker dataset
-    # This will return (images, captions, lengths) for each iteration.
+def get_loader(json_imgs, vocab, transform, batch_size, shuffle, num_workers):
+    """Returns torch.utils.data.DataLoader for custom Radiology dataset."""
+    # Radiology report dataset
+    dataSet = dataset(json_imgs = json_imgs, vocab = vocab, transform = transform)
+    # Data loader for Radiology dataset
+    # This will return (images, paragraphs, sentence_lengths, num_sents) for each iteration.
     # images: a tensor of shape (batch_size, 3, 224, 224).
-    # captions: a tensor of shape (batch_size, padded_length).
+    # paragraph: a tensor of shape (batch_size, sentence_length, padded_length).
     # lengths: a list indicating valid length for each caption. length is (batch_size).
     data_loader = torch.utils.data.DataLoader(dataset=dataSet,
                                               batch_size=batch_size,

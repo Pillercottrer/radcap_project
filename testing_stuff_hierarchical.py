@@ -18,6 +18,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print('hello world')
 
 
+radimgs = json.load(open('./data_preprocessing/radcap_bodypartsplit_data.json', 'r'))
+
+for img in radimgs['ankle'][:10]:
+    for sent in img['paragraph']:
+        print(sent)
+
 flickrimgs = json.load(open('./data_preprocessing/all_imgcap.json', 'r'))
 
 image_path = flickrimgs[0]['filepath']
