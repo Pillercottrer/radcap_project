@@ -7,6 +7,7 @@ import torchvision.transforms as transforms
 import pickle
 import nltk
 import json
+from PIL import Image
 from skimage.transform import resize
 from imageio import imread
 from cnn_rnn_models.cnn_rnn_hierarchical.model_hierarchical import Encoder, CoAttention, MLC, SentenceLSTMDecoder, Embedding, WordLSTMDecoder
@@ -18,15 +19,25 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print('hello world')
 
 
+a = torch.Tensor([0,1,2,3]).long()
+
+for i in range(max(a)):
+    print(i)
+
+
 radimgs = json.load(open('./data_preprocessing/radcap_bodypartsplit_data.json', 'r'))
 
 for img in radimgs['ankle'][:10]:
+    print(img['Fracture'])
+    print(int(img['Fracture']) + 3)
     for sent in img['paragraph']:
         print(sent)
 
+
+
 flickrimgs = json.load(open('./data_preprocessing/all_imgcap.json', 'r'))
 
-image_path = flickrimgs[0]['filepath']
+image_path = radimgs['ankle'][0]['file_paths'][0]
 paragraphs = flickrimgs[0]['captions']
 # Load vocabulary wrapper
 with open('./data/flickrvocab.pkl', 'rb') as f:
@@ -62,10 +73,18 @@ paragraph_sent_lengths = paragraph_sent_lengths.unsqueeze(0).to(device)
 num_sents = torch.Tensor([3]).to(device)
 
 
+transform_train = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+
 
 
 # Read image and process
 img = imread(image_path)
+
 if len(img.shape) == 2:
     img = img[:, :, np.newaxis]
     img = np.concatenate([img, img, img], axis=2)

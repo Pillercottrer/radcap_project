@@ -44,11 +44,18 @@ class dataset(data.Dataset):
             image_tensor[i] = image
 
         #TAGS
-
-        #TODO
-        # change to vocab representation of the tag??
-        #return tags aswell
-        tags = [self.img_data[index]['Fracture'], self.img_data[index]['Implant'], self.img_data[index]['Tumor'], self.img_data[index]['Osteoarthritis']]
+        tags = []
+        if int(self.img_data[index]['Fracture']) > 0:
+            tags.append('Fracture')
+        if int(self.img_data[index]['Implant']) > 0:
+            tags.append('Implant')
+        if int(self.img_data[index]['Tumor']) > 0:
+            tags.append('Tumor')
+        if int(self.img_data[index]['Osteoarthritis']) > 0:
+            tags.append('Osteoarthritis')
+        if len(tags) is 0:
+            tags.append('Normal')
+        #tags = [self.img_data[index]['Fracture'], self.img_data[index]['Implant'], self.img_data[index]['Tumor'], self.img_data[index]['Osteoarthritis']]
 
         #Potential tags
         #'Filename', 'Exam_id', 'Rprt', 'split_sets', 'split_name', 'Fracture_oblique', 'Fracture_angulation', 'Exam_body_part', 'Exam_view', 'Side', 'Prev_frx', 'Pseudo_arthrosis', 'Dislocation', 'Implant_hip', 'Implant_knee',
@@ -84,7 +91,7 @@ class dataset(data.Dataset):
             end = lengths[i]
             paragraph[i, :end] = cap_torch[:end]
 
-        return image_tensor, paragraph, lengths
+        return image_tensor, paragraph, lengths, tags
 
 
     def __len__(self):
@@ -106,7 +113,7 @@ def collate_fn(data):
         targets: torch tensor of shape (batch_size, padded_length).
         lengths: list; valid length for each padded caption.
     """
-    images, paragraph, sentence_lengths = zip(*data)
+    images, paragraph, sentence_lengths, tags = zip(*data)
 
 
     num_imgs = [len(img_tuple) for img_tuple in images]
@@ -119,19 +126,19 @@ def collate_fn(data):
     num_sents = [len(element) for element in sentence_lengths]  #behövs en torch-tensor eller funkar list
     #num_sents = torch.Tensor(num_sents) # (batch_size)
 
-    sentence_lengths_tensor = torch.zeros(len(sentence_lengths), max(num_sents)) #(batch_size, max_num_sents)
+    sentence_lengths_tensor = torch.zeros(len(sentence_lengths), max(num_sents)).long() #(batch_size, max_num_sents)
     for i, ele in enumerate(sentence_lengths):
         end = len(ele)
         sentence_lengths_tensor[i, :end] = torch.tensor(ele) # skippa tensor för längder?
 
-    paragraph_tensor = torch.zeros(len(paragraph), max(num_sents), max(max_length)).long()  #batch_size, max_num_sents, max_sent_length
+    paragraph_tensor = torch.zeros(len(paragraph), max(num_sents), max(max_length)).long() #batch_size, max_num_sents, max_sent_length
 
     for i, tup_paragraph in enumerate(paragraph):
         for j, sent_length in enumerate(sentence_lengths[i]):
             paragraph_tensor[i, j, :sent_length] = tup_paragraph[j, :sent_length]
 
 
-    return images_tensor, paragraph_tensor, sentence_lengths, num_sents
+    return images_tensor, paragraph_tensor, tags, sentence_lengths_tensor, num_sents, max_length
 
 
 

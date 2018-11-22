@@ -15,7 +15,7 @@ class Encoder(nn.Module):
         self.enc_image_size = encoded_image_size
 
         #Ändra till rtg-nätverk sen.
-        resnet = torchvision.models.resnet101(pretrained=True)  # pretrained ImageNet ResNet-101
+        resnet = torchvision.models.resnet34(pretrained=True)  # pretrained ImageNet ResNet-101
 
         # Remove linear and pool layers (since we're not doing classification)
         modules = list(resnet.children())[:-2]
@@ -31,10 +31,13 @@ class Encoder(nn.Module):
         :param images: images, a tensor of dimensions (batch_size, 3, image_size, image_size)
         :return: encoded images
         """
-        out = self.resnet(images)  # (batch_size, 2048, image_size/32, image_size/32)
-        out = self.adaptive_pool(out)  # (batch_size, 2048, encoded_image_size, encoded_image_size)
-        # TODO - maxpool images
-        out = out.permute(0, 2, 3, 1)  # (batch_size, encoded_image_size, encoded_image_size, 2048)
+        out_list = []
+        for i in range(images.size(1)):   #Loop over all images
+            out_list.append(self.resnet(images[:, i, :, :]).unsqueeze(1))
+        out = torch.cat(out_list, 1)
+        out, _ = torch.max(out, 1)
+        #out = self.adaptive_pool(out)  # (batch_size, 512, encoded_image_size, encoded_image_size)
+        out = out.permute(0, 2, 3, 1)  # (batch_size, encoded_image_size, encoded_image_size, 512)
         return out
 
     def fine_tune(self, fine_tune=True):
@@ -120,12 +123,12 @@ class TagConcatTable(nn.Module):
 
 class MLC(nn.Module):
 
-    def __init__(self, num_pixels, encoder_dimension, embedding, vocab, tags=['Fracture', 'Implant', 'Tumor', 'Osteoarthritis']):  #from features a single fully connected layer computes tags.
+    def __init__(self, num_pixels, encoder_dimension, embedding, vocab, tags=['Normal', 'Fracture', 'Implant', 'Tumor', 'Osteoarthritis']):  #from features a single fully connected layer computes tags.
         print('lalal')
         super(MLC, self).__init__()
         self.encoder_dimension = encoder_dimension
         self.num_pixels = num_pixels
-        self.embedding = embedding# Word embedding
+        self.embedding = embedding # Word embedding
         self.vocab = vocab
 
         self.mlc = TagConcatTable(tags=tags, input_dim=encoder_dimension*num_pixels)
@@ -139,7 +142,7 @@ class MLC(nn.Module):
     def get_tag_embeddings(self, indices):
         for i in range(len(indices)):
             for j in range(len(indices[i])):
-                indices[i,j] =self.vocab(self.tags_translate[self.tags[indices[i, j]]])
+                indices[i, j] = self.vocab(self.tags_translate[self.tags[indices[i, j]]])
         return self.embedding(indices)
 
     def init_weights(self):
@@ -159,19 +162,27 @@ class MLC(nn.Module):
         resnet_linear = visual_features.contiguous().view(-1, self.encoder_dimension*self.num_pixels)
         tags_softmaxes = self.mlc(resnet_linear) # dim(batch_size, num_tags, 2)
         # Second neuron (i.e. 1) == 'Yes'
-        _, indices = torch.sort(tags_softmaxes[:, :, 1],
+        tag_value, indices = torch.sort(tags_softmaxes[:, :, 1],
                                 dim=1,
                                 descending=True)
 
         # 0 = 'Fracture', 1 = 'Implant', 2 = 'Tumor', 3 = 'Osteoarthritis'
 
+        """
+        indices_over_threshhold = torch.zeros(indices.size(0), indices.size(1))
+        #Select tags with softmax value over threshhold.
+        threshhold = 0.3
+        for i, batch in enumerate(tag_value):
+            for j, val in enumerate(batch):
+                if val > threshhold:
+                    indices_over_threshhold[i, j] = indices[i, j]
+                else:
+                    indices_over_threshhold[i, j] = -1
+            if sum(indices_over_threshhold[i]) is 0:
+                indices_over_threshhold[i, 0] = batch[i, 0] #if no tag is over threshhold, use greatest tag as only tag
+        """
 
-
-        select_tags = self.get_tag_embeddings(indices)
-
-
-
-
+        select_tags = self.get_tag_embeddings(indices[:, :3])  # top 3 tags???????
 
         return select_tags
 
@@ -212,7 +223,7 @@ class Embedding(nn.Module):
 
 class SentenceLSTMDecoder(nn.Module):
 
-    def __init__(self, vocab_size, num_pixels=196, ctx_attention_dim=512, semantic_embed_dim = 111, hidden_dim=512, encoder_visual_dim=2048, ctx_dim = 100,
+    def __init__(self, vocab_size, num_pixels=196, ctx_attention_dim=512, semantic_embed_dim = 111, hidden_dim=512, encoder_visual_dim=512, ctx_dim = 100,
                  tags=['Fracture', 'Implant', 'Tumor', 'Osteoarthritis'], t_dim = 111, stop_dim=100, max_sents=8, dropout=0.5):
         """
         :param attention_dim: size of attention network
@@ -357,7 +368,7 @@ class SentenceLSTMDecoder(nn.Module):
         return topic_tensor, stop_tensor
 
 class WordLSTMDecoder(nn.Module):
-    def __init__(self, vocab_size, embedding, topic_vector_size = 111, num_layers = 1, embed_size = 111, hidden_size = 512, max_num_sents = 8, max_seq_length=20, dropout=0.5):
+    def __init__(self, vocab_size, embedding, topic_vector_size = 111, num_layers = 1, embed_size = 111, hidden_size = 512, max_num_sents = 12, max_seq_length=20, dropout=0.5):
         super(WordLSTMDecoder, self).__init__()
         self.embed = nn.Embedding(vocab_size, embed_size)
         self.lstm = nn.LSTMCell(topic_vector_size, hidden_size, bias=True)
@@ -383,7 +394,7 @@ class WordLSTMDecoder(nn.Module):
         c = torch.zeros(batch_size, self.hidden_size).to(device)
         return h, c
 
-    def forward(self, topic_vectors, num_sents, paragraphs, sentence_lengths):
+    def forward(self, topic_vectors, num_sents, paragraphs, sentence_lengths, max_length):
         """Decode topic vectors and generates captions."""
         """Topic vectors: 3D tensor (batch_size, num_topic vectors, topic_vec_dim)"""
         """Number of sentences is a 1d tensor (batch size, 1)"""
@@ -402,34 +413,34 @@ class WordLSTMDecoder(nn.Module):
         sentence_lengths = sentence_lengths[sort_ind_num_sents]
 
         # Create tensors to hold word prediction scores
-        predictions = torch.zeros(batch_size, self.max_num_sents, self.max_seg_length, vocab_size).to(device)
+        predictions = torch.zeros(batch_size, num_sents[0].item(), max_length, vocab_size).to(device)
 
 
-        for i in range(self.max_num_sents):  #Generate sentence from all topic_vectors
+        for i in range(num_sents[0].item()):  #Generate sentence from all topic_vectors
             #batch_size_i = sum([l > i for l in num_sents]) #0123456789
             batch_size_i = 0
             for l in num_sents:
                 if l > i:
                     batch_size_i += 1
-            if batch_size_i == 0:
+            if batch_size_i is 0:
                 return predictions
 
-            topics = topic_vectors[:batch_size_i,i,:]
-            captions = paragraphs[:batch_size_i,i,:]
-            lengths = sentence_lengths[:batch_size_i,i]
+            topics = topic_vectors[:batch_size_i, i, :]
+            sentence_batch = paragraphs[:batch_size_i, i, :]
+            lengths = sentence_lengths[:batch_size_i, i]
 
             # Sort input data by decreasing lengths; why? apparent below (joke, its not so apparent)
             caption_lengths, sort_ind = lengths.sort(dim=0, descending=True)
             topics = topics[sort_ind]
-            captions = captions[sort_ind]
+            sentence_batch = sentence_batch[sort_ind]
 
             #paragraphs = paragraphs[sort_ind] # rätt??????
 
             # Embedding
-            embeddings = self.embedding(captions)  # (batch_size, max_caption_length, embed_dim)
+            embeddings = self.embedding(sentence_batch)  # (batch_size, max_caption_length, embed_dim)
 
             # Initialize LSTM state (0-tensors)
-            h, c = self.init_hidden_state(batch_size)  # (batch_size, decoder_dim)
+            h, c = self.init_hidden_state(batch_size_i)  # (batch_size, decoder_dim)
 
             # We won't decode at the <end> position, since we've finished generating as soon as we generate <end>
             # So, decoding lengths are actual lengths - 1
