@@ -3,6 +3,7 @@ import torchvision.transforms as transforms
 import json
 import random
 import torch
+from torch.nn.utils.rnn import pack_padded_sequence
 from cnn_rnn_models.cnn_rnn_hierarchical.dataHandlerHierarchical import get_loader
 from cnn_rnn_models.cnn_rnn_hierarchical.model_hierarchical import Encoder, CoAttention, MLC, SentenceLSTMDecoder, Embedding, WordLSTMDecoder
 from data_preprocessing.build_vocab import Vocabulary
@@ -13,6 +14,12 @@ data_vocab_path = './data/vocab.pkl' #path for vocabulary
 #Training parameters
 batch_size = 32
 workers = 1
+encoder_lr = 1e-5
+mlc_lr = 1e-5
+sent_lstm_lr = 5e-4
+word_lstm_lr = 5e-4
+fine_tune_encoder = True
+
 
 
 
@@ -69,6 +76,8 @@ def main():
 
 
 
+
+
     #Parameters
     vocab_size = len(vocab)
     num_pixels_visual_attention = 49
@@ -89,6 +98,21 @@ def main():
 
     word_lstm = WordLSTMDecoder(vocab_size, embedding)
     word_lstm.to(device)
+    #Optimizers
+    mlc_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, mlc.parameters()),
+                                     lr=mlc_lr)
+
+    encoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, encoder.parameters()),
+                                         lr=encoder_lr) if fine_tune_encoder else None
+
+    sent_lstm_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, sent_lstm.parameters()),
+                                     lr=sent_lstm_lr)
+
+    word_lstm_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, word_lstm.parameters()),
+                                     lr=mlc_lr)
+
+    # Loss function
+    criterion = torch.nn.CrossEntropyLoss().to(device)
 
 
     for i, (images, target_paragraphs, tags, paragraph_sent_lengths, num_sents, max_length) in enumerate(train_loader):
@@ -107,8 +131,17 @@ def main():
 
         topic_tensor, stop_tensor = sent_lstm(visual_features, semantic_features)
 
-        predictions = word_lstm(topic_tensor, num_sents, target_paragraphs, paragraph_sent_lengths, max(max_length))
+        predictions, sorted_paragraphs, sorted_sent_lengths, sort_ind_num_sent = word_lstm(topic_tensor, num_sents, target_paragraphs, paragraph_sent_lengths, max(max_length))
+
+
+        for j in range(sorted_paragraphs.size(1)):  #Loop over all sentences and compute comulative loss over each sentence.
+            print('breakpoint')
+            #scores, _ = pack_padded_sequence(predictions[:, j], sorted_sent_lengths[:, j], batch_first=True)
+            #target, _ = pack_padded_sequence(sorted_paragraphs[:, j], sorted_sent_lengths[:, j], batch_first=True)
+
         print('breakpoint')
+
+
 
 
 

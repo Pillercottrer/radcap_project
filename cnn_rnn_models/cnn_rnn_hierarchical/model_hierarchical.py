@@ -433,6 +433,15 @@ class WordLSTMDecoder(nn.Module):
             caption_lengths, sort_ind = lengths.sort(dim=0, descending=True)
             topics = topics[sort_ind]
             sentence_batch = sentence_batch[sort_ind]
+            """
+            reverse_sort = {}
+            for i in range(len(lengths)):
+                for j, ele in enumerate(sort_ind):
+                    if i is ele.item():
+                        reverse_sort[i] = j
+                        continue
+            """
+
 
             #paragraphs = paragraphs[sort_ind] # rätt??????
 
@@ -446,7 +455,7 @@ class WordLSTMDecoder(nn.Module):
             # So, decoding lengths are actual lengths - 1
             decode_lengths = (caption_lengths - 1).tolist()
 
-            # Create tensors to hold word predicion scores and alphas
+            # Create tensors to hold word prediction scores and alphas
             #predictions = torch.zeros(batch_size, max(decode_lengths), vocab_size).to(device)
 
             # Proceed one time-step with topic vector as input
@@ -456,11 +465,19 @@ class WordLSTMDecoder(nn.Module):
                 batch_size_j = sum([l > j for l in decode_lengths])
                 h, c = self.lstm(embeddings[:batch_size_j, j, :], (h[:batch_size_j], c[:batch_size_j]))  # (batch_size_j, decoder_dim)
                 preds = self.linear(self.dropout(h))  # (batch_size_j, vocab_size)
-                predictions[:batch_size_j, i, j, :] = preds
+
+                #reverse_sort_batch = []
+                #for i in range(batch_size_j):
+                #    reverse_sort_batch.append(reverse_sort[i])
+
+                for k, ele in enumerate(preds):
+                    predictions[sort_ind[k], i, j, :] = ele
+
+                #predictions[:batch_size_j, i, j, :] = preds
 
             print('break_test')
 
-        return predictions, sort_ind_num_sents
+        return predictions, paragraphs, torch.clamp(sentence_lengths-1, min=0), sort_ind_num_sents
 
 
 

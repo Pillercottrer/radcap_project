@@ -19,6 +19,19 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print('hello world')
 
 
+lengths = torch.Tensor([5,3,4,7,699,1]).long()
+lenths_sort, sort_ind = torch.sort(lengths, descending=True)
+
+
+reverse_sort = []
+for i in range(len(lengths)):
+    for j, ele in enumerate(sort_ind):
+        if i is ele.item():
+            reverse_sort.append(j)
+            continue
+
+reversed_questionsmark = lenths_sort[reverse_sort]
+
 a = torch.Tensor([0,1,2,3]).long()
 
 for i in range(max(a)):
