@@ -133,11 +133,56 @@ def main():
 
         predictions, sorted_paragraphs, sorted_sent_lengths, sort_ind_num_sent = word_lstm(topic_tensor, num_sents, target_paragraphs, paragraph_sent_lengths, max(max_length))
 
-
-        for j in range(sorted_paragraphs.size(1)):  #Loop over all sentences and compute comulative loss over each sentence.
+        # Loop over all sentences
+        for i, p in enumerate(sorted_paragraphs):
             print('breakpoint')
-            #scores, _ = pack_padded_sequence(predictions[:, j], sorted_sent_lengths[:, j], batch_first=True)
-            #target, _ = pack_padded_sequence(sorted_paragraphs[:, j], sorted_sent_lengths[:, j], batch_first=True)
+            #sorted_p_ind = torch.sort(sorted_sent_lengths[i], descending=True)
+
+            for k, s in enumerate(p):
+                print('breakpoint')
+
+
+        #
+
+        #Loop over all sentences and compute comulative loss over each sentence.
+        for j in range(sorted_paragraphs.size(1)):
+            print('breakpoint')
+
+            sorted_sent_length_batch, sort_ind = torch.sort(sorted_sent_lengths[:, j], descending=True)
+
+            sorted_sent_length_batch = sorted_sent_length_batch[sorted_sent_length_batch.nonzero().squeeze()]
+
+
+            sentence_batch_unsorted = sorted_paragraphs[:, j]
+            sentence_batch_sorted = sentence_batch_unsorted[sort_ind]
+            targets = sentence_batch_sorted[:, 1:]
+
+
+            predictions_batch_unsorted = predictions[:, j]
+            predictions_batch_sorted = predictions_batch_unsorted[sort_ind]
+            scores = predictions_batch_sorted
+
+            a = sum(sorted_sent_length_batch)
+            print('breakpoint')
+
+
+            scores, _= pack_padded_sequence(scores[:len(sorted_sent_length_batch)], sorted_sent_length_batch, batch_first=True)
+            targets, _ = pack_padded_sequence(targets[:len(sorted_sent_length_batch)], sorted_sent_length_batch, batch_first=True)
+
+            # Calculate loss
+            loss_word_lstm = criterion(scores, targets)
+
+
+
+            print('break')
+
+        encoder_optimizer.zero_grad()
+        sent_lstm_optimizer.zero_grad()
+        word_lstm_optimizer.zero_grad()
+
+        loss_word_lstm.backward()
+        encoder_optimizer.step()
+        word_lstm_optimizer.step()
 
         print('breakpoint')
 
