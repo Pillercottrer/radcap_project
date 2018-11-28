@@ -48,6 +48,8 @@ for img in radimgs['ankle'][:10]:
 
 
 
+
+
 flickrimgs = json.load(open('./data_preprocessing/all_imgcap.json', 'r'))
 
 image_path = radimgs['ankle'][0]['file_paths'][0]

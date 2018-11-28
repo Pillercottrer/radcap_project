@@ -120,7 +120,7 @@ def collate_fn(data):
     images_tensor = torch.zeros(len(images), max(num_imgs), 3, 224, 224)
 
     for i, images_tup in enumerate(images):
-        images_tensor[i, :num_imgs[i], :, : , :] = images_tup
+        images_tensor[i, :num_imgs[i], :, :, :] = images_tup
 
     max_length = [max(element) for element in sentence_lengths]
     num_sents = [len(element) for element in sentence_lengths]  #behövs en torch-tensor eller funkar list
@@ -133,12 +133,42 @@ def collate_fn(data):
 
     paragraph_tensor = torch.zeros(len(paragraph), max(num_sents), max(max_length)).long() #batch_size, max_num_sents, max_sent_length
 
+
+
     for i, tup_paragraph in enumerate(paragraph):
         for j, sent_length in enumerate(sentence_lengths[i]):
             paragraph_tensor[i, j, :sent_length] = tup_paragraph[j, :sent_length]
 
+    #Work in progress
+    #return list of paragraphs with same num of sents
 
-    return images_tensor, paragraph_tensor, tags, sentence_lengths_tensor, num_sents, max_length
+    paragraph_list_tensor = []
+    batch_sizes = []
+
+    num_sents_torch = torch.Tensor(num_sents).long()
+    num_sents_torch, sort_ind = num_sents_torch.sort(descending=True)
+    num_sents.sort(reverse=True)
+    num_sents_unique = list(set(num_sents))
+    num_sents_unique.sort(reverse=True)
+
+    paragraph = tuple(paragraph[i.item()] for i in sort_ind)
+    sentence_lengths = tuple(sentence_lengths[i.item()] for i in sort_ind)
+    images_tensor = images_tensor[sort_ind]
+    sentence_lengths_tensor = sentence_lengths_tensor[sort_ind]
+
+    cummulative_count = 0
+    for i, ele in enumerate(num_sents_unique):
+        count = num_sents.count(ele)
+        batch_sizes.append(count)
+        paragraph_tensor_fixed_num_sent = torch.zeros(count, ele, max(max_length)).long()  # batch_size, max_num_sents, max_sent_length
+        for i, tup_paragraph in enumerate(paragraph[cummulative_count:(cummulative_count+count)]):
+            for j, sent_length in enumerate(sentence_lengths[i+cummulative_count]):
+                paragraph_tensor_fixed_num_sent[i, j, :sent_length] = tup_paragraph[j, :sent_length]
+        paragraph_list_tensor.append(paragraph_tensor_fixed_num_sent)
+
+        cummulative_count += count
+
+    return images_tensor, paragraph_list_tensor, batch_sizes, tags, sentence_lengths_tensor, num_sents, max_length
 
 
 

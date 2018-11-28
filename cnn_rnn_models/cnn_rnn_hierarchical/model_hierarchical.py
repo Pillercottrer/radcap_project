@@ -152,6 +152,9 @@ class MLC(nn.Module):
         self.mlc.init_weights()
         #self.embedding.weight.data.uniform_(-0.1, 0.1)
 
+    def params(self):
+        return self.mlc.parameters()
+
 
     def forward(self, visual_features):
         """Använda 2 sista lagren av resnet istället???"""
@@ -352,13 +355,19 @@ class SentenceLSTMDecoder(nn.Module):
         topic_tensor = torch.zeros(batch_size, self.max_sentences, self.t_dim).to(device)
         stop_vectors = []
         stop_tensor = torch.zeros(batch_size, self.max_sentences, 2).to(device)
+
+        stop_distribution = torch.zeros(batch_size, self.max_sentences).to(device)
+
         for i in range(self.max_sentences):
             # Co-Attention
             ctx = self.attention(visual_features, semantic_features, h)  # generate context vector from features and hidden state
             h, c = self.lstm_sentence(ctx, (h, c)) #advance one time-step
             stop = self.softmax(self.tanh(self.stop_control_3(self.stop_control_1(h_last_time_step)+self.stop_control_2(h))))
             stop_vectors.append(stop)
-            stop_tensor[:,i,:] = stop
+            stop_tensor[:, i, :] = stop  #last index = stop prob.
+            #for j in range(stop_tensor.size(0)):
+            #    stop_distribution[j, i] = 0 if stop_tensor[j, i] > 0.5 else 1
+
             t = self.tanh(self.fc_h_to_t(h) + self.fc_ctx_to_t(ctx))
             topic_vectors.append(t)
             topic_tensor[:,i,:] = t
@@ -413,17 +422,17 @@ class WordLSTMDecoder(nn.Module):
         sentence_lengths = sentence_lengths[sort_ind_num_sents]
 
         # Create tensors to hold word prediction scores
-        predictions = torch.zeros(batch_size, num_sents[0].item(), max_length, vocab_size).to(device)
+        predictions = torch.zeros(batch_size, max_num_topic_vectors, max_length, vocab_size).to(device)
 
 
-        for i in range(num_sents[0].item()):  #Generate sentence from all topic_vectors
+        for i in range(max_num_topic_vectors):  #Generate sentence from all topic_vectors
             #batch_size_i = sum([l > i for l in num_sents]) #0123456789
             batch_size_i = 0
             for l in num_sents:
                 if l > i:
                     batch_size_i += 1
             if batch_size_i is 0:
-                return predictions
+                return predictions, paragraphs, torch.clamp(sentence_lengths-1, min=0), sort_ind_num_sents
 
             topics = topic_vectors[:batch_size_i, i, :]
             sentence_batch = paragraphs[:batch_size_i, i, :]
