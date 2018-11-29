@@ -95,7 +95,7 @@ class CoAttention(nn.Module):
         concat_att = torch.cat((v_att, a_att), 1) #concatenates v_att and a_att
         ctx = self.fullyconnected_ctx(concat_att)  #co-attention context vector
 
-        return ctx
+        return ctx, alpha_visual, alpha_semantic
 
 class TagConcatTable(nn.Module):
     def __init__(self, tags, input_dim):
@@ -104,7 +104,7 @@ class TagConcatTable(nn.Module):
         for tag in tags:
             self.subnetworks[tag] = nn.Sequential(
                 nn.Linear(input_dim, 2),
-                nn.Softmax(dim = 1)).cuda()
+                nn.Softmax(dim=1)).cuda()
 
     def forward(self, x):
         if len(x.shape) != 2:
@@ -123,8 +123,7 @@ class TagConcatTable(nn.Module):
 
 class MLC(nn.Module):
 
-    def __init__(self, num_pixels, encoder_dimension, embedding, vocab, tags=['Normal', 'Fracture', 'Implant', 'Tumor', 'Osteoarthritis']):  #from features a single fully connected layer computes tags.
-        print('lalal')
+    def __init__(self, num_pixels, encoder_dimension, embedding, vocab, tags=['normal', 'fracture', 'implant', 'tumor', 'osteoarthritis']):  #from features a single fully connected layer computes tags.
         super(MLC, self).__init__()
         self.encoder_dimension = encoder_dimension
         self.num_pixels = num_pixels
@@ -172,22 +171,25 @@ class MLC(nn.Module):
         # 0 = 'Fracture', 1 = 'Implant', 2 = 'Tumor', 3 = 'Osteoarthritis'
 
         """
-        indices_over_threshhold = torch.zeros(indices.size(0), indices.size(1))
+        indices_over_threshhold = torch.zeros(indices.size(0), indices.size(1)).long().to(device)
         #Select tags with softmax value over threshhold.
         threshhold = 0.3
+        threshhold_index = {}
         for i, batch in enumerate(tag_value):
+            threshhold_index[i] = 0
             for j, val in enumerate(batch):
                 if val > threshhold:
                     indices_over_threshhold[i, j] = indices[i, j]
+                    threshhold_index[i] = j
                 else:
                     indices_over_threshhold[i, j] = -1
             if sum(indices_over_threshhold[i]) is 0:
-                indices_over_threshhold[i, 0] = batch[i, 0] #if no tag is over threshhold, use greatest tag as only tag
+                indices_over_threshhold[i, 0] = batch[i, 0]#if no tag is over threshhold, use greatest tag as only tag
         """
 
         select_tags = self.get_tag_embeddings(indices[:, :3])  # top 3 tags???????
 
-        return select_tags
+        return select_tags, tags_softmaxes
 
 
 
@@ -358,9 +360,12 @@ class SentenceLSTMDecoder(nn.Module):
 
         stop_distribution = torch.zeros(batch_size, self.max_sentences).to(device)
 
+        alphas_visual = torch.zeros(batch_size, self.max_sentences, num_pixels).to(device) #49 visual features
+        alphas_semantic = torch.zeros(batch_size, self.max_sentences, 3).to(device) #3 semantic features
+
         for i in range(self.max_sentences):
             # Co-Attention
-            ctx = self.attention(visual_features, semantic_features, h)  # generate context vector from features and hidden state
+            ctx, alpha_visual, alpha_semantic = self.attention(visual_features, semantic_features, h)  # generate context vector from features and hidden state
             h, c = self.lstm_sentence(ctx, (h, c)) #advance one time-step
             stop = self.softmax(self.tanh(self.stop_control_3(self.stop_control_1(h_last_time_step)+self.stop_control_2(h))))
             stop_vectors.append(stop)
@@ -370,11 +375,13 @@ class SentenceLSTMDecoder(nn.Module):
 
             t = self.tanh(self.fc_h_to_t(h) + self.fc_ctx_to_t(ctx))
             topic_vectors.append(t)
-            topic_tensor[:,i,:] = t
+            topic_tensor[:, i, :] = t
             h_last_time_step = h
-            print(stop)
 
-        return topic_tensor, stop_tensor
+            alphas_visual[:, i, :] = alpha_visual
+            alphas_semantic[:, i, :] = alpha_semantic
+
+        return topic_tensor, stop_tensor, alphas_visual, alphas_semantic
 
 class WordLSTMDecoder(nn.Module):
     def __init__(self, vocab_size, embedding, topic_vector_size = 111, num_layers = 1, embed_size = 111, hidden_size = 512, max_num_sents = 12, max_seq_length=20, dropout=0.5):
@@ -483,8 +490,6 @@ class WordLSTMDecoder(nn.Module):
                     predictions[sort_ind[k], i, j, :] = ele
 
                 #predictions[:batch_size_j, i, j, :] = preds
-
-            print('break_test')
 
         return predictions, paragraphs, torch.clamp(sentence_lengths-1, min=0), sort_ind_num_sents
 

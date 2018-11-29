@@ -30,9 +30,9 @@ def build_vocab(json_path, count_thr):
         json_data = json.load(json_file)
     counts = {}
     for jimg in json_data:
-        for cap in jimg['captions']:
+        for sent in jimg['paragraph']:
             #txt = str(cap).lower().translate(str.maketrans("", "", string.punctuation)).strip().split()
-            tokens = nltk.tokenize.word_tokenize(cap.lower())
+            tokens = nltk.tokenize.word_tokenize(sent.lower())
             for word in tokens:
                 counts[word] = counts.get(word, 0) + 1
 
@@ -44,6 +44,10 @@ def build_vocab(json_path, count_thr):
     vocab.add_word('<start>')
     vocab.add_word('<end>')
     vocab.add_word('<unk>')
+    tags = ['normal', 'fracture', 'implant', 'tumor', 'osteoarthritis']
+    for word in tags:
+        if word not in words:
+            vocab.add_word(word)
 
     # Add the words to the vocabulary.
     for i, word in enumerate(words):
@@ -64,9 +68,9 @@ if __name__ == '__main__':
     parser.add_argument('--caption_path', type=str,
                         default='radcap_data.json',
                         help='path for train annotation file')
-    parser.add_argument('--vocab_path', type=str, default='./data/vocab.pkl',
+    parser.add_argument('--vocab_path', type=str, default='/home/ehb/PycharmProjects/radcap_project/data/vocab.pkl',
                         help='path for saving vocabulary wrapper')
-    parser.add_argument('--threshold', type=int, default=4,
+    parser.add_argument('--threshold', type=int, default=10,
                         help='minimum word count threshold')
     args = parser.parse_args()
     main(args)

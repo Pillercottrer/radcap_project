@@ -45,16 +45,33 @@ class dataset(data.Dataset):
 
         #TAGS
         tags = []
+        tags_yn = []
         if int(self.img_data[index]['Fracture']) > 0:
             tags.append('Fracture')
+            tags_yn.append(1)
+        else:
+            tags_yn.append(0)
         if int(self.img_data[index]['Implant']) > 0:
             tags.append('Implant')
+            tags_yn.append(1)
+        else:
+            tags_yn.append(0)
         if int(self.img_data[index]['Tumor']) > 0:
             tags.append('Tumor')
+            tags_yn.append(1)
+        else:
+            tags_yn.append(0)
         if int(self.img_data[index]['Osteoarthritis']) > 0:
             tags.append('Osteoarthritis')
+            tags_yn.append(1)
+        else:
+            tags_yn.append(0)
         if len(tags) is 0:
             tags.append('Normal')
+            tags_yn.append(1)
+        else:
+            tags_yn.append(0)
+
         #tags = [self.img_data[index]['Fracture'], self.img_data[index]['Implant'], self.img_data[index]['Tumor'], self.img_data[index]['Osteoarthritis']]
 
         #Potential tags
@@ -91,7 +108,7 @@ class dataset(data.Dataset):
             end = lengths[i]
             paragraph[i, :end] = cap_torch[:end]
 
-        return image_tensor, paragraph, lengths, tags
+        return image_tensor, paragraph, lengths, tags, tags_yn
 
 
     def __len__(self):
@@ -113,7 +130,7 @@ def collate_fn(data):
         targets: torch tensor of shape (batch_size, padded_length).
         lengths: list; valid length for each padded caption.
     """
-    images, paragraph, sentence_lengths, tags = zip(*data)
+    images, paragraph, sentence_lengths, tags, tags_yn = zip(*data)
 
 
     num_imgs = [len(img_tuple) for img_tuple in images]
@@ -132,7 +149,6 @@ def collate_fn(data):
         sentence_lengths_tensor[i, :end] = torch.tensor(ele) # skippa tensor för längder?
 
     paragraph_tensor = torch.zeros(len(paragraph), max(num_sents), max(max_length)).long() #batch_size, max_num_sents, max_sent_length
-
 
 
     for i, tup_paragraph in enumerate(paragraph):
@@ -168,7 +184,13 @@ def collate_fn(data):
 
         cummulative_count += count
 
-    return images_tensor, paragraph_list_tensor, batch_sizes, tags, sentence_lengths_tensor, num_sents, max_length
+    tags_yn_tensor = torch.zeros(len(tags_yn), len(tags_yn[0])).long()
+    for i,tags in enumerate(tags_yn):
+        for j, tag in enumerate(tags):
+            tags_yn_tensor[i, j] = tag
+
+
+    return images_tensor, paragraph_list_tensor, batch_sizes, tags, tags_yn_tensor, sentence_lengths_tensor, num_sents, max_length
 
 
 

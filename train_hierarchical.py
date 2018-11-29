@@ -19,16 +19,20 @@ mlc_lr = 1e-5
 sent_lstm_lr = 5e-4
 word_lstm_lr = 5e-4
 fine_tune_encoder = True
+num_epochs = 10
 
-
+#Parameters
+# Load vocabulary wrapper
+with open(data_vocab_path, 'rb') as f:
+    vocab = pickle.load(f)
+vocab_size = len(vocab)
+max_num_sents = 8
+num_pixels_visual_attention = 49
+encoder_dim = 512
+tags = ['normal', 'fracture', 'implant', 'tumor', 'osteoarthritis']
 
 
 def main():
-    print('test')
-
-    # Load vocabulary wrapper
-    with open(data_vocab_path, 'rb') as f:
-        vocab = pickle.load(f)
 
     # Radiology
     radimgs = json.load(open('./data_preprocessing/radcap_bodypartsplit_data.json', 'r'))
@@ -72,17 +76,9 @@ def main():
     train_loader = get_loader(image_datasets['train'], vocab, data_transforms['train'],
                               batch_size=batch_size, shuffle=True,
                               num_workers=workers)
-
-
-
-
-
-
-    #Parameters
-    vocab_size = len(vocab)
-    max_num_sents = 8
-    num_pixels_visual_attention = 49
-    encoder_dim = 512
+    val_loader = get_loader(image_datasets['val'], vocab, data_transforms['val'],
+                              batch_size=batch_size, shuffle=True,
+                              num_workers=workers)
 
     #Load models
     encoder = Encoder()
@@ -99,8 +95,9 @@ def main():
 
     word_lstm = WordLSTMDecoder(vocab_size, embedding)
     word_lstm.to(device)
+
     #Optimizers
-    #mlc_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, mlc.params()), lr=mlc_lr)
+    mlc_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, mlc.parameters()), lr=mlc_lr)
 
     encoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, encoder.parameters()),
                                          lr=encoder_lr) if fine_tune_encoder else None
@@ -119,7 +116,15 @@ def main():
     criterion_sentence = torch.nn.MSELoss().to(device)
 
 
-    for i, (images, target_list_paragraph, batch_sizes, tags, paragraph_sent_lengths, num_sents, max_length) in enumerate(train_loader):
+    for epoch in range(num_epochs):
+        print('Epoch:{0}'.format(epoch))
+        train(train_loader=train_loader, encoder=encoder, mlc=mlc, sent_lstm=sent_lstm, word_lstm=word_lstm, criterion=criterion, encoder_optimizer=encoder_optimizer, mlc_optimizer=mlc_optimizer, word_lstm_optimizer=word_lstm_optimizer, sent_lstm_optimizer=sent_lstm_optimizer, epoch=epoch)
+
+
+
+    """
+    lowest_loss = 10000
+    for i, (images, target_list_paragraph, batch_sizes, tags, tags_yn, paragraph_sent_lengths, num_sents, max_length) in enumerate(train_loader):
 
         for batch_index, target_paragraphs in enumerate(target_list_paragraph):
             print('test')
@@ -133,6 +138,7 @@ def main():
             num_sents_minibatch = torch.Tensor(num_sents[index_range_start:index_range_end]).long().to(device)
             target_paragraphs_minibatch = target_paragraphs.to(device)
             paragraph_sent_lengths_minibatch = paragraph_sent_lengths[index_range_start:index_range_end].to(device)
+            tags_minibatch = tags_yn[index_range_start:index_range_end].to(device)
             max_length_minibatch = max_length[index_range_start:index_range_end]
 
             #Encode images
@@ -140,33 +146,51 @@ def main():
             # Flatten image
             visual_features = encoder_out.view(mini_batch_size, -1, encoder_dim)  # (batch_size, num_pixels, encoder_dim)
 
-            semantic_features = mlc(visual_features)
+            semantic_features, tag_scores = mlc(visual_features)
 
-            topic_tensor, stop_tensor = sent_lstm(visual_features, semantic_features)
+            topic_tensor, stop_tensor, alphas_visual, alphas_semantic = sent_lstm(visual_features, semantic_features)
 
 
 
 
             #generate sentences
             predictions, sorted_paragraphs, sorted_sent_lengths, sort_ind_num_sent = word_lstm(topic_tensor, num_sents_minibatch, target_paragraphs_minibatch, paragraph_sent_lengths_minibatch, max(max_length))
-            """
+            
             # Loop over all sentences
-            for i, p in enumerate(sorted_paragraphs):
-                print('breakpoint')
-                #sorted_p_ind = torch.sort(sorted_sent_lengths[i], descending=True)
-                for k, s in enumerate(p):
-                    print('breakpoint')
-            """
+            #for i, p in enumerate(sorted_paragraphs):
+            #    print('breakpoint')
+            #    #sorted_p_ind = torch.sort(sorted_sent_lengths[i], descending=True)
+            #    for k, s in enumerate(p):
+            #        print('breakpoint')
+            
+
+            #Calculate tags classification loss
+
+            scores_tags, _ = pack_padded_sequence(tag_scores, [5]*mini_batch_size,
+                                             batch_first=True)
+
+            targets_tags, _ = pack_padded_sequence(tags_minibatch, [5]*mini_batch_size,
+                                                  batch_first=True)
+
+            tag_loss = criterion(scores_tags, targets_tags)
+
+            # Calculate sentence lstm loss
+
+            if num_sents_minibatch[0] < 8:
+                target_sentence_lstm = torch.zeros(mini_batch_size, (num_sents_minibatch[0] + 1)).long().to(device)
+                target_sentence_lstm[:, -1] = 1
+
+                scores_sentence_lstm = stop_tensor[:, :(num_sents_minibatch[0] + 1)]
+
+                lens = [num_sents_minibatch[0] + 1] * mini_batch_size
+            else:
+                target_sentence_lstm = torch.zeros(mini_batch_size, 8).long().to(device)
+
+                scores_sentence_lstm = stop_tensor[:, :8]
+
+                lens = [8] * mini_batch_size
 
 
-
-            # Calculate sentence lstm-loss
-            target_sentence_lstm = torch.zeros(mini_batch_size, (num_sents_minibatch[0] + 1)).long().to(device)
-            target_sentence_lstm[:, -1] = 1
-
-            scores_sentence_lstm = stop_tensor[:, :(num_sents_minibatch[0] + 1)]
-
-            lens = [num_sents_minibatch[0] + 1]*mini_batch_size
 
             scores_sentence_lstm, _ = pack_padded_sequence(scores_sentence_lstm[:len(lens)], lens,
                                              batch_first=True)
@@ -203,7 +227,7 @@ def main():
                     sentence_batch_sorted = sorted_paragraphs[:, j]
                     targets = sentence_batch_sorted[:, 1:]
 
-                    predictions_batch_sorted = predictions
+                    predictions_batch_sorted = predictions[:, j]
                     scores = predictions_batch_sorted
 
                     scores, _ = pack_padded_sequence(scores[:len(sorted_sent_length_batch)], sorted_sent_length_batch,
@@ -225,11 +249,19 @@ def main():
                 total_losses.append(loss_word_lstm)
 
                 print('break')
-
+            total_losses.append(tag_loss)
             total_losses.append(sentence_lstm_loss)
 
             total_losses = sum(total_losses)
+
+            # Add doubly stochastic attention regularization
+            total_losses += (1. - alphas_visual[:, :num_sents_minibatch[0]].sum(dim=1) ** 2).mean()
+            total_losses += (1. - alphas_semantic[:, :num_sents_minibatch[0]].sum(dim=1) ** 2).mean()
+
+
+
             encoder_optimizer.zero_grad()
+            mlc_optimizer.zero_grad()
             sent_lstm_optimizer.zero_grad()
             word_lstm_optimizer.zero_grad()
 
@@ -237,22 +269,298 @@ def main():
             total_losses.backward()
 
             encoder_optimizer.step()
+            mlc_optimizer.step()
             sent_lstm_optimizer.step()
             word_lstm_optimizer.step()
 
+
             print('breakpoint')
+    """
 
 
+def train(train_loader, encoder, mlc, sent_lstm, word_lstm, criterion, encoder_optimizer, mlc_optimizer, word_lstm_optimizer, sent_lstm_optimizer, epoch):
 
+    encoder.train()
+    mlc.train()
+    sent_lstm.train()
+    word_lstm.train()
 
+    lowest_loss = 10000
+    for i, (images, target_list_paragraph, batch_sizes, tags, tags_yn, paragraph_sent_lengths, num_sents,
+            max_length) in enumerate(train_loader):
+        fifty_batch_loss = 0
+        for batch_index, target_paragraphs in enumerate(target_list_paragraph):
+            index_range_start = sum(batch_sizes[:batch_index])
+            index_range_end = index_range_start + batch_sizes[batch_index]
 
+            mini_batch_size = batch_sizes[batch_index]
 
+            images_minibatch = images[index_range_start:index_range_end].to(device)
+            num_sents_minibatch = torch.Tensor(num_sents[index_range_start:index_range_end]).long().to(device)
+            target_paragraphs_minibatch = target_paragraphs.to(device)
+            paragraph_sent_lengths_minibatch = paragraph_sent_lengths[index_range_start:index_range_end].to(device)
+            tags_minibatch = tags_yn[index_range_start:index_range_end].to(device)
+            max_length_minibatch = max_length[index_range_start:index_range_end]
 
+            # Encode images
+            encoder_out = encoder(images_minibatch)  # resnet-output
+            # Flatten image
+            visual_features = encoder_out.view(mini_batch_size, -1,
+                                               encoder_dim)  # (batch_size, num_pixels, encoder_dim)
 
+            semantic_features, tag_scores = mlc(visual_features)
 
+            topic_tensor, stop_tensor, alphas_visual, alphas_semantic = sent_lstm(visual_features, semantic_features)
 
+            # generate sentences
+            predictions, sorted_paragraphs, sorted_sent_lengths, sort_ind_num_sent = word_lstm(topic_tensor,
+                                                                                               num_sents_minibatch,
+                                                                                               target_paragraphs_minibatch,
+                                                                                               paragraph_sent_lengths_minibatch,
+                                                                                               max(max_length))
+            """
+            # Loop over all sentences
+            for i, p in enumerate(sorted_paragraphs):
+                print('breakpoint')
+                #sorted_p_ind = torch.sort(sorted_sent_lengths[i], descending=True)
+                for k, s in enumerate(p):
+                    print('breakpoint')
+            """
 
+            # Calculate tags classification loss
 
+            scores_tags, _ = pack_padded_sequence(tag_scores, [5] * mini_batch_size,
+                                                  batch_first=True)
+
+            targets_tags, _ = pack_padded_sequence(tags_minibatch, [5] * mini_batch_size,
+                                                   batch_first=True)
+
+            tag_loss = criterion(scores_tags, targets_tags)
+
+            # Calculate sentence lstm loss
+
+            if num_sents_minibatch[0] < 8:
+                target_sentence_lstm = torch.zeros(mini_batch_size, (num_sents_minibatch[0] + 1)).long().to(device)
+                target_sentence_lstm[:, -1] = 1
+
+                scores_sentence_lstm = stop_tensor[:, :(num_sents_minibatch[0] + 1)]
+
+                lens = [num_sents_minibatch[0] + 1] * mini_batch_size
+            else:
+                target_sentence_lstm = torch.zeros(mini_batch_size, 8).long().to(device)
+
+                scores_sentence_lstm = stop_tensor[:, :8]
+
+                lens = [8] * mini_batch_size
+
+            scores_sentence_lstm, _ = pack_padded_sequence(scores_sentence_lstm[:len(lens)], lens,
+                                                           batch_first=True)
+            target_sentence_lstm, _ = pack_padded_sequence(target_sentence_lstm[:len(lens)], lens,
+                                                           batch_first=True)
+
+            sentence_lstm_loss = criterion(scores_sentence_lstm, target_sentence_lstm)
+
+            total_losses = []
+            # Loop over all sentences and compute comulative loss over each sentence
+            num_sents_loop_size = sorted_paragraphs.size(1) if sorted_paragraphs.size(1) < 8 else 8
+            for j in range(num_sents_loop_size):
+                if mini_batch_size > 1:
+                    sorted_sent_length_batch, sort_ind = torch.sort(sorted_sent_lengths[:, j], descending=True)
+
+                    sorted_sent_length_batch = sorted_sent_length_batch[sorted_sent_length_batch.nonzero().squeeze()]
+
+                    sentence_batch_unsorted = sorted_paragraphs[:, j]
+                    sentence_batch_sorted = sentence_batch_unsorted[sort_ind]
+                    targets = sentence_batch_sorted[:, 1:]
+
+                    predictions_batch_unsorted = predictions[:, j]
+                    predictions_batch_sorted = predictions_batch_unsorted[sort_ind]
+                    scores = predictions_batch_sorted
+
+                    scores, _ = pack_padded_sequence(scores[:len(sorted_sent_length_batch)], sorted_sent_length_batch,
+                                                     batch_first=True)
+                    targets, _ = pack_padded_sequence(targets[:len(sorted_sent_length_batch)], sorted_sent_length_batch,
+                                                      batch_first=True)
+
+                else:
+                    sorted_sent_length_batch = sorted_sent_lengths[:, j]
+                    sentence_batch_sorted = sorted_paragraphs[:, j]
+                    targets = sentence_batch_sorted[:, 1:]
+
+                    predictions_batch_sorted = predictions[:, j]
+                    scores = predictions_batch_sorted
+
+                    scores, _ = pack_padded_sequence(scores[:len(sorted_sent_length_batch)], sorted_sent_length_batch,
+                                                     batch_first=True)
+                    targets, _ = pack_padded_sequence(targets[:len(sorted_sent_length_batch)], sorted_sent_length_batch,
+                                                      batch_first=True)
+
+                # a = sum(sorted_sent_length_batch)
+
+                # Calculate loss
+                loss_word_lstm = criterion(scores, targets)
+                total_losses.append(loss_word_lstm)
+
+            total_losses.append(tag_loss)
+            total_losses.append(sentence_lstm_loss)
+
+            total_losses = sum(total_losses)
+
+            # Add doubly stochastic attention regularization
+            total_losses += (1. - alphas_visual[:, :num_sents_minibatch[0]].sum(dim=1) ** 2).mean()
+            total_losses += (1. - alphas_semantic[:, :num_sents_minibatch[0]].sum(dim=1) ** 2).mean()
+
+            encoder_optimizer.zero_grad()
+            mlc_optimizer.zero_grad()
+            sent_lstm_optimizer.zero_grad()
+            word_lstm_optimizer.zero_grad()
+
+            # backprop
+            total_losses.backward()
+
+            encoder_optimizer.step()
+            mlc_optimizer.step()
+            sent_lstm_optimizer.step()
+            word_lstm_optimizer.step()
+
+            fifty_batch_loss += total_losses.item()
+        if i % 50 is 0:
+            print('Batch loss for batch {0}: {1}'.format(i, fifty_batch_loss))
+
+def validate(val_loader, encoder, mlc, sent_lstm, word_lstm, criterion):
+
+    encoder.eval()
+    mlc.eval()
+    sent_lstm.eval()
+    word_lstm.eval()
+
+    lowest_loss = 10000
+    for i, (images, target_list_paragraph, batch_sizes, tags, tags_yn, paragraph_sent_lengths, num_sents,
+            max_length) in enumerate(val_loader):
+
+        for batch_index, target_paragraphs in enumerate(target_list_paragraph):
+            print('test')
+            index_range_start = sum(batch_sizes[:batch_index])
+            index_range_end = index_range_start + batch_sizes[batch_index]
+
+            mini_batch_size = batch_sizes[batch_index]
+
+            images_minibatch = images[index_range_start:index_range_end].to(device)
+            num_sents_minibatch = torch.Tensor(num_sents[index_range_start:index_range_end]).long().to(device)
+            target_paragraphs_minibatch = target_paragraphs.to(device)
+            paragraph_sent_lengths_minibatch = paragraph_sent_lengths[index_range_start:index_range_end].to(device)
+            tags_minibatch = tags_yn[index_range_start:index_range_end].to(device)
+            max_length_minibatch = max_length[index_range_start:index_range_end]
+
+            # Encode images
+            encoder_out = encoder(images_minibatch)  # resnet-output
+            # Flatten image
+            visual_features = encoder_out.view(mini_batch_size, -1,
+                                               encoder_dim)  # (batch_size, num_pixels, encoder_dim)
+
+            semantic_features, tag_scores = mlc(visual_features)
+
+            topic_tensor, stop_tensor, alphas_visual, alphas_semantic = sent_lstm(visual_features, semantic_features)
+
+            # generate sentences
+            predictions, sorted_paragraphs, sorted_sent_lengths, sort_ind_num_sent = word_lstm(topic_tensor,
+                                                                                               num_sents_minibatch,
+                                                                                               target_paragraphs_minibatch,
+                                                                                               paragraph_sent_lengths_minibatch,
+                                                                                               max(max_length))
+            """
+            # Loop over all sentences
+            for i, p in enumerate(sorted_paragraphs):
+                print('breakpoint')
+                #sorted_p_ind = torch.sort(sorted_sent_lengths[i], descending=True)
+                for k, s in enumerate(p):
+                    print('breakpoint')
+            """
+
+            # Calculate tags classification loss
+
+            scores_tags, _ = pack_padded_sequence(tag_scores, [5] * mini_batch_size,
+                                                  batch_first=True)
+
+            targets_tags, _ = pack_padded_sequence(tags_minibatch, [5] * mini_batch_size,
+                                                   batch_first=True)
+
+            tag_loss = criterion(scores_tags, targets_tags)
+
+            # Calculate sentence lstm loss
+
+            if num_sents_minibatch[0] < 8:
+                target_sentence_lstm = torch.zeros(mini_batch_size, (num_sents_minibatch[0] + 1)).long().to(device)
+                target_sentence_lstm[:, -1] = 1
+
+                scores_sentence_lstm = stop_tensor[:, :(num_sents_minibatch[0] + 1)]
+
+                lens = [num_sents_minibatch[0] + 1] * mini_batch_size
+            else:
+                target_sentence_lstm = torch.zeros(mini_batch_size, 8).long().to(device)
+
+                scores_sentence_lstm = stop_tensor[:, :8]
+
+                lens = [8] * mini_batch_size
+
+            scores_sentence_lstm, _ = pack_padded_sequence(scores_sentence_lstm[:len(lens)], lens,
+                                                           batch_first=True)
+            target_sentence_lstm, _ = pack_padded_sequence(target_sentence_lstm[:len(lens)], lens,
+                                                           batch_first=True)
+
+            sentence_lstm_loss = criterion(scores_sentence_lstm, target_sentence_lstm)
+
+            total_losses = []
+            # Loop over all sentences and compute comulative loss over each sentence
+            for j in range(sorted_paragraphs.size(1)):
+                print('breakpoint')
+                if mini_batch_size > 1:
+                    sorted_sent_length_batch, sort_ind = torch.sort(sorted_sent_lengths[:, j], descending=True)
+
+                    sorted_sent_length_batch = sorted_sent_length_batch[sorted_sent_length_batch.nonzero().squeeze()]
+
+                    sentence_batch_unsorted = sorted_paragraphs[:, j]
+                    sentence_batch_sorted = sentence_batch_unsorted[sort_ind]
+                    targets = sentence_batch_sorted[:, 1:]
+
+                    predictions_batch_unsorted = predictions[:, j]
+                    predictions_batch_sorted = predictions_batch_unsorted[sort_ind]
+                    scores = predictions_batch_sorted
+
+                    scores, _ = pack_padded_sequence(scores[:len(sorted_sent_length_batch)], sorted_sent_length_batch,
+                                                     batch_first=True)
+                    targets, _ = pack_padded_sequence(targets[:len(sorted_sent_length_batch)], sorted_sent_length_batch,
+                                                      batch_first=True)
+
+                else:
+                    sorted_sent_length_batch = sorted_sent_lengths[:, j]
+                    sentence_batch_sorted = sorted_paragraphs[:, j]
+                    targets = sentence_batch_sorted[:, 1:]
+
+                    predictions_batch_sorted = predictions[:, j]
+                    scores = predictions_batch_sorted
+
+                    scores, _ = pack_padded_sequence(scores[:len(sorted_sent_length_batch)], sorted_sent_length_batch,
+                                                     batch_first=True)
+                    targets, _ = pack_padded_sequence(targets[:len(sorted_sent_length_batch)], sorted_sent_length_batch,
+                                                      batch_first=True)
+
+                # a = sum(sorted_sent_length_batch)
+                print('breakpoint')
+
+                # Calculate loss
+                loss_word_lstm = criterion(scores, targets)
+                total_losses.append(loss_word_lstm)
+
+                print('break')
+            total_losses.append(tag_loss)
+            total_losses.append(sentence_lstm_loss)
+
+            total_losses = sum(total_losses)
+
+            # Add doubly stochastic attention regularization
+            total_losses += (1. - alphas_visual[:, :num_sents_minibatch[0]].sum(dim=1) ** 2).mean()
+            total_losses += (1. - alphas_semantic[:, :num_sents_minibatch[0]].sum(dim=1) ** 2).mean()
 
 
 if __name__ == '__main__':
