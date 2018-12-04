@@ -48,7 +48,7 @@ def main():
     val_imgs = radimgs_ankle[len_train:len_train + len_val]
     test_imgs = radimgs_ankle[len_train + len_val:]
 
-    #json.dump(test_imgs, open('ankle_test_data.json', 'w'))
+    json.dump(test_imgs, open('ankle_test_data.json', 'w'))
 
     image_datasets = {}
     image_datasets['train'] = train_imgs
@@ -118,12 +118,25 @@ def main():
 
     criterion_sentence = torch.nn.MSELoss().to(device)
 
-
+    best_CIDEr_score = 0
     for epoch in range(num_epochs):
         print('Epoch:{0}'.format(epoch))
         train(train_loader=train_loader, encoder=encoder, mlc=mlc, sent_lstm=sent_lstm, word_lstm=word_lstm, criterion=criterion, encoder_optimizer=encoder_optimizer, mlc_optimizer=mlc_optimizer, word_lstm_optimizer=word_lstm_optimizer, sent_lstm_optimizer=sent_lstm_optimizer, epoch=epoch)
 
-        validate(val_loader=val_loader, encoder=encoder, mlc=mlc, sent_lstm=sent_lstm, word_lstm=word_lstm, criterion=criterion)
+        CIDEr_score = validate(val_loader=val_loader, encoder=encoder, mlc=mlc, sent_lstm=sent_lstm, word_lstm=word_lstm, criterion=criterion)
+        if CIDEr_score > best_CIDEr_score:
+            best_CIDEr_score = CIDEr_score
+            torch.save(encoder.state_dict(), os.path.join(model_path, 'encoder-{}.ckpt'.format('best-cider-hierarchical')))
+            torch.save(embedding.state_dict(),
+                       os.path.join(model_path, 'embedding-{}.ckpt'.format('best-cider-hierarchical')))
+            torch.save(mlc.state_dict(),
+                       os.path.join(model_path, 'mlc-{}.ckpt'.format('best-cider-hierarchical')))
+            torch.save(sent_lstm.state_dict(),
+                       os.path.join(model_path, 'sent-lstm-{}.ckpt'.format('best-cider-hierarchical')))
+            torch.save(word_lstm.state_dict(),
+                       os.path.join(model_path, 'word-lstm-{}.ckpt'.format('best-cider-hierarchical')))
+
+
 
     torch.save(encoder.state_dict(), os.path.join(model_path, 'encoder-{}.ckpt'.format('final-hierarchical')))
     torch.save(embedding.state_dict(),
@@ -630,6 +643,7 @@ def validate(val_loader, encoder, mlc, sent_lstm, word_lstm, criterion):
     #calculate cider score
     score, scores = cider_score_function.compute_score(gts, res)
     print('Mean CIDEr score for validation set {0}'.format(score))
+    return score
 
 
 

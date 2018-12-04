@@ -410,6 +410,38 @@ class WordLSTMDecoder(nn.Module):
         c = torch.zeros(batch_size, self.hidden_size).to(device)
         return h, c
 
+    def sample_greedy(self, topic_vectors):
+        # Create tensors to hold word prediction scores
+        predictions = torch.zeros(len(topic_vectors), self.max_seg_length, self.vocab_size).to(device)
+
+        sampled_sents = []
+        for i, topic_vec in enumerate(topic_vectors):
+            print('a')
+
+            # Initialize LSTM state (0-tensors)
+            h = torch.zeros(self.hidden_size).to(device)
+            c = torch.zeros(self.hidden_size).to(device)
+
+
+            sampled_ids = []
+            # Proceed one time-step with topic vector and <start>-token as input
+            h, c = self.lstm(topic_vec, (h, c))
+            h, c = self.lstm(self.embedding(1), (h, c))
+            preds = self.linear(h)
+
+            _, sampled_word_idx = torch.sort(preds, descending=True)
+            sampled_ids.append(sampled_word_idx[0])
+            for j in range(self.max_seg_length):
+                h, c = self.lstm(self.embedding(), (h, c))  # (batch_size_j, decoder_dim)
+                preds = self.linear(self.dropout(h))  # (batch_size_j, vocab_size)
+
+                _, sampled_word_idx = torch.sort(preds, descending=True)
+                sampled_ids.append(sampled_word_idx[0])
+                if sampled_word_idx[0] is 2:
+                    break
+            sampled_sents.append(sampled_ids)
+        return sampled_sents
+
     def forward(self, topic_vectors, num_sents, paragraphs, sentence_lengths, max_length):
         """Decode topic vectors and generates captions."""
         """Topic vectors: 3D tensor (batch_size, num_topic vectors, topic_vec_dim)"""
