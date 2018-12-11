@@ -9,14 +9,14 @@ import json
 import random
 import os
 import numpy as np
-from build_vocab import Vocabulary
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
 import torchvision.datasets as datasets
-from model_cnnrnn_attention_sgrvinod import Encoder, DecoderWithAttention
-from dataHandlerAttention import get_loader
+from cnn_rnn_models.cnn_rnn_xu.model_cnnrnn_attention_sgrvinod import Encoder, DecoderWithAttention
+from cnn_rnn_models.cnn_rnn_xu.dataHandlerAttention import get_loader
 from nltk.translate.bleu_score import corpus_bleu
 from torch.optim import lr_scheduler
+from data_preprocessing.build_vocab import Vocabulary
 
 
 
@@ -128,17 +128,26 @@ def main():
     """
 
     # Radiology
-    radimgs = json.load(open('./radcap_bodypartsplit_data.json', 'r'))
+    radimgs = json.load(open('./data_preprocessing/radcap_bodypartsplit_data.json', 'r'))
     radimgs_ankle = radimgs['ankle']
     random.shuffle(radimgs_ankle)
-    len_train = int(round(0.7 * len(radimgs_ankle)))
-    len_val = int(round(0.20 * len(radimgs_ankle)))
+    radimgs_fracture = []
 
-    train_imgs = radimgs_ankle[:len_train]
-    val_imgs = radimgs_ankle[len_train:len_train + len_val]
-    test_imgs = radimgs_ankle[len_train + len_val:]
+    for jimg in radimgs_ankle:
+        if int(jimg['Fracture']) > 0 and int(jimg['Implant']) < 0:
+            if 'Oförändra' not in jimg['paragraph'][0]:
+                radimgs_fracture.append(jimg)
 
-    json.dump(test_imgs, open('ankle_test_data.json', 'w'))
+
+
+    len_train = int(round(0.7 * len(radimgs_fracture)))
+    len_val = int(round(0.20 * len(radimgs_fracture)))
+
+    train_imgs = radimgs_fracture[:len_train]
+    val_imgs = radimgs_fracture[len_train:len_train + len_val]
+    test_imgs = radimgs_fracture[len_train + len_val:]
+
+    json.dump(test_imgs, open('ankle_test_data_only_fracture_without_checkup.json', 'w'))
 
     image_datasets = {}
     image_datasets['train'] = train_imgs
@@ -186,7 +195,7 @@ def main():
             exp_lr_scheduler_encoder.step()
 
         # Decay learning rate if there is no improvement for 8 consecutive epochs, and terminate training after 20
-        if epochs_since_improvement == 20:
+        if epochs_since_improvement == 10:
             break
         """
         if epochs_since_improvement > 0 and epochs_since_improvement % 8 == 0:
@@ -218,8 +227,8 @@ def main():
             print("\nEpochs since last improvement: %d\n" % (epochs_since_improvement,))
         else:
             # Save the model checkpoints
-            torch.save(decoder.state_dict(), os.path.join(model_path, 'decoder-{}-{}.ckpt'.format(epoch + 1, 'bleu4')))
-            torch.save(encoder.state_dict(), os.path.join(model_path, 'encoder-{}-{}.ckpt'.format(epoch + 1, 'bleu4')))
+            torch.save(decoder.state_dict(), os.path.join(model_path, 'decoder-{}-{}.ckpt'.format('best', 'bleu4')))
+            torch.save(encoder.state_dict(), os.path.join(model_path, 'encoder-{}-{}.ckpt'.format('best', 'bleu4')))
             epochs_since_improvement = 0
 
         """
@@ -288,13 +297,13 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
         if encoder_optimizer is not None:
             encoder_optimizer.zero_grad()
         loss.backward()
-        """
+
         # Clip gradients
         if grad_clip is not None:
-            clip_gradient(decoder_optimizer, grad_clip)
+            clip_gradient(decoder, grad_clip) #decoder or decoder_optimizer?
             if encoder_optimizer is not None:
-                clip_gradient(encoder_optimizer, grad_clip)
-        """
+                clip_gradient(encoder, grad_clip)
+
         # Update weights
         decoder_optimizer.step()
         if encoder_optimizer is not None:
@@ -343,7 +352,7 @@ def validate(val_loader, encoder, decoder, criterion):
     hypotheses = list()  # hypotheses (predictions)
 
     # Batches
-    for i, (imgs, caps, caplens, allcaps) in enumerate(val_loader):
+    for i, (imgs, caps, caplens) in enumerate(val_loader):
 
         # Move to device, if available
         imgs = imgs.to(device)
@@ -397,6 +406,7 @@ def validate(val_loader, encoder, decoder, criterion):
         # If for n images, we have n hypotheses, and references a, b, c... for each image, we need -
         # references = [[ref1a, ref1b, ref1c], [ref2a, ref2b], ...], hypotheses = [hyp1, hyp2, ...]
         # References
+        """
         allcaps = allcaps[sort_ind]  # because images were sorted in the decoder
         for j in range(allcaps.shape[0]):
             img_caps = allcaps[j].tolist()
@@ -404,6 +414,11 @@ def validate(val_loader, encoder, decoder, criterion):
                 map(lambda c: [w for w in c if w not in {vocab('<start>'), vocab('<pad>')}],
                     img_caps))  # remove <start> and pads
             references.append(img_captions)
+        """
+        for cap in caps_sorted:
+            img_cap_list = cap.tolist()
+            img_cap_removed_start_and_pad = [w for w in img_cap_list if w not in {vocab('<start>'), vocab('<pad>')}]  # remove <start> and pads)
+            references.append([img_cap_removed_start_and_pad])
 
         # Hypotheses
         _, preds = torch.max(scores_copy, dim=2)
@@ -439,7 +454,7 @@ def clip_gradient(model, clip):
     for p in model.parameters():
         if p.grad is None:
             continue
-        p.grad.data = p.grad.data.clamp(-clip,clip)
+        p.grad.data = p.grad.data.clamp(-clip, clip)
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""

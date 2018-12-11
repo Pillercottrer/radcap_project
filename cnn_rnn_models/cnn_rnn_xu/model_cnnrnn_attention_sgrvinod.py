@@ -40,41 +40,6 @@ class Encoder(nn.Module):
 
         self.fine_tune()
 
-    def ali_load_state_dict(self, model, loaded_model_dict):
-        own_state = model.state_dict()
-        missing = []
-        extra = []
-        missmatched = []
-        for name, param in loaded_model_dict.items():
-            if name in own_state:
-                if isinstance(param, torch.nn.Parameter):
-                    param = param.data
-                try:
-                    # Where magic happens!
-                    own_state[name].copy_(param)
-                except Exception:
-                    missmatched.append(name)
-
-        missing = set(own_state.keys()) - set(loaded_model_dict.keys())
-        extra = set(loaded_model_dict.keys()) - set(own_state.keys())
-
-        match_table = np.zeros((len(missing), len(extra)))
-
-        missing = list(missing)
-        extra = list(extra)
-
-        for i in range(len(missing)):
-            for j in range(len(extra)):
-                m = list(missing)[i]
-                e = list(extra)[j]
-                if (loaded_model_dict[e].size() == own_state[m].size()):
-                    match_table[i][j] = 1
-
-        print(match_table)
-        # TODO fix layers names
-        print('missing keys in state_dict: "{}"'.format(missing))
-        print('extra keys in state_dict: "{}"'.format(extra))
-        print('missmatched keys in state_dict: "{}"'.format(missmatched))
 
     def forward(self, images):
         """
@@ -85,8 +50,16 @@ class Encoder(nn.Module):
         #out = self.rad_model(images)
         #out = out.permute(0, 2, 3, 1)  # (batch_size, encoded_image_size, encoded_image_size, 256) #ResNet-34 last convolutional layer
 
-        out = self.resnet(images)  # (batch_size, 2048, image_size/32, image_size/32)
-        out = self.adaptive_pool(out)  # (batch_size, 2048, encoded_image_size, encoded_image_size)
+        out_list = []
+        for i in range(images.size(1)):  # Loop over all images
+            out_i = self.resnet(images[:, i, :, :])
+            out_i = self.adaptive_pool(out_i)
+            out_list.append(out_i.unsqueeze(1))
+        out = torch.cat(out_list, 1)
+        out, _ = torch.max(out, 1)
+
+        #out = self.resnet(images)  # (batch_size, 2048, image_size/32, image_size/32)
+        #out = self.adaptive_pool(out)  # (batch_size, 2048, encoded_image_size, encoded_image_size)
         out = out.permute(0, 2, 3, 1)  # (batch_size, encoded_image_size, encoded_image_size, 2048)
         return out
 

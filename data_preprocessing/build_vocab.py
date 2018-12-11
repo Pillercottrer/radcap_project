@@ -44,11 +44,13 @@ def build_vocab(json_path, count_thr):
     vocab.add_word('<start>')
     vocab.add_word('<end>')
     vocab.add_word('<unk>')
+    vocab.add_word('.')
+    """
     tags = ['normal', 'fracture', 'implant', 'tumor', 'osteoarthritis']
     for word in tags:
         if word not in words:
             vocab.add_word(word)
-
+    """
     # Add the words to the vocabulary.
     for i, word in enumerate(words):
         vocab.add_word(word)

@@ -34,13 +34,10 @@ class dataset(data.Dataset):
         #path = self.img_data[index]['id'] + '.jpg'
         #path = self.img_data[index]['filepath'] #Flickr
         paths = self.img_data[index]['file_paths'] #radiology
-        num_cap = len(self.img_data[index]['captions'])
-        caption = self.img_data[index]['captions'][random.randint(0,num_cap-1)]
+        #num_cap = len(self.img_data[index]['captions'])
+        #caption = self.img_data[index]['captions'][random.randint(0, num_cap-1)]
 
         #image = Image.open(os.path.join(self.root, path)).convert('RGB')
-        image = Image.open(paths[0]).convert('RGB')
-        if self.transform is not None:
-            image = self.transform(image)
         image_tensor = torch.zeros(len(paths), 3, 224, 224)
 
         for i, path in enumerate(paths):
@@ -50,18 +47,26 @@ class dataset(data.Dataset):
             image_tensor[i] = image
 
         #rad_combined_tensor, _ = torch.max(image_tensor, 0)
+        paragraph = []
+        for i, sent in enumerate(self.img_data[index]['paragraph']):
+            tokens = nltk.tokenize.word_tokenize(str(sent).lower())
+            sentence = []
+            if i is 0:
+                sentence.append(vocab('<start>'))
+            sentence.extend([vocab(token) for token in tokens])
+            sentence.append(vocab('.'))
+            paragraph.extend(sentence)
+            #target = torch.Tensor(caption)
+        test = vocab('<end>')
+        paragraph.append(vocab('<end>'))
+        target = torch.Tensor(paragraph)
+        return image_tensor, target
 
-        # Convert caption (string) to word ids.
-        tokens = nltk.tokenize.word_tokenize(str(caption).lower())
-        caption = []
-        caption.append(vocab('<start>'))
-        caption.extend([vocab(token) for token in tokens])
-        caption.append(vocab('<end>'))
-        target = torch.Tensor(caption)
+
         lengths = []
         if self.img_data[index]['split'] == 'val':
             allcaps = []
-            for cap in self.img_data[index]['captions']:
+            for cap in self.img_data[index]['paragraph']:
                 tokens = nltk.tokenize.word_tokenize(str(cap).lower())
                 caption = []
                 caption.append(vocab('<start>'))
@@ -78,9 +83,34 @@ class dataset(data.Dataset):
         else:
             return image, target
 
+
     def __len__(self):
         return len(self.img_data)
 
+def make_weights_for_balanced_classes(json_imgs, nclasses):
+    count = [0] * nclasses
+    for item in json_imgs:
+        if int(item['Fracture']) > 0: #hard coded classes '0' and '1'
+            count[1] += 1
+        else:
+            count[0] += 1
+
+    weight_per_class = [0.] * nclasses
+    """
+    N = float(sum(count))
+    for i in range(nclasses):
+        weight_per_class[i] = N/float(count[i])
+    """
+    weight_per_class[0] = 0.001
+    weight_per_class[1] = 100
+    weight = [0] * len(json_imgs)
+
+    for idx, img in enumerate(json_imgs):
+        if int(img['Fracture']) > 0:
+            weight[idx] = weight_per_class[1]
+        else:
+            weight[idx] = weight_per_class[0]
+    return weight
 
 def collate_fn(data):
     """Creates mini-batch tensors from the list of tuples (image, caption).
@@ -111,7 +141,13 @@ def collate_fn(data):
         counter += 1
 
     # Merge images (from tuple of 3D tensor to 4D tensor).
-    images = torch.stack(images, 0)
+    #images = torch.stack(images, 0)
+
+    num_imgs = [len(img_tuple) for img_tuple in images]
+    images_tensor = torch.zeros(len(images), max(num_imgs), 3, 224, 224)
+
+    for i, images_tup in enumerate(images):
+        images_tensor[i, :num_imgs[i], :, :, :] = images_tup
 
     # Merge captions (from tuple of 1D tensor to 2D tensor).
     lengths = [len(cap) for cap in captions]
@@ -122,7 +158,7 @@ def collate_fn(data):
 
 
     if(counter < 3):
-        return images, targets, lengths
+        return images_tensor, targets, lengths
     else:
         # Merge all_caps lol
         allcap_lengths = []
@@ -154,15 +190,21 @@ def merge_1d_to_2d(tensor):
 
 
 
-def get_loader(root, json_imgs, vocab, transform, batch_size, shuffle, num_workers, ):
+def get_loader(root, json_imgs, vocab, transform, batch_size, shuffle, num_workers):
     """Returns torch.utils.data.DataLoader for custom Flicker8k dataset."""
-    # Flicker8k caption dataset
+    # Radiological caption dataset
     dataSet = dataset(root = root, json_imgs = json_imgs, vocab = vocab, transform = transform)
-    # Data loader for Flicker dataset
+    # Data loader for Radiology dataset
     # This will return (images, captions, lengths) for each iteration.
     # images: a tensor of shape (batch_size, 3, 224, 224).
     # captions: a tensor of shape (batch_size, padded_length).
     # lengths: a list indicating valid length for each caption. length is (batch_size).
+
+    #weights = make_weights_for_balanced_classes(json_imgs, 2)
+    #weights = torch.DoubleTensor(weights)
+
+    #sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
+
     data_loader = torch.utils.data.DataLoader(dataset=dataSet,
                                               batch_size=batch_size,
                                               shuffle=shuffle,

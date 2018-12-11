@@ -417,27 +417,33 @@ class WordLSTMDecoder(nn.Module):
         sampled_sents = []
         for i, topic_vec in enumerate(topic_vectors):
             print('a')
+            topic_vec = topic_vec.unsqueeze(0)
 
             # Initialize LSTM state (0-tensors)
-            h = torch.zeros(self.hidden_size).to(device)
-            c = torch.zeros(self.hidden_size).to(device)
+            h = torch.zeros(1, self.hidden_size).to(device)
+            c = torch.zeros(1, self.hidden_size).to(device)
 
 
             sampled_ids = []
             # Proceed one time-step with topic vector and <start>-token as input
             h, c = self.lstm(topic_vec, (h, c))
-            h, c = self.lstm(self.embedding(1), (h, c))
+            ind = torch.Tensor([1]).long().to(device)
+            start_embed = self.embedding(ind)#embedding of <start>
+            h, c = self.lstm(start_embed, (h, c))
             preds = self.linear(h)
 
             _, sampled_word_idx = torch.sort(preds, descending=True)
-            sampled_ids.append(sampled_word_idx[0])
+            word_ind = sampled_word_idx[0, 0].long()
+            sampled_ids.append(word_ind)
             for j in range(self.max_seg_length):
-                h, c = self.lstm(self.embedding(), (h, c))  # (batch_size_j, decoder_dim)
+                ind = sampled_word_idx[0, 0].unsqueeze(0).long()
+                word_embed = self.embedding(ind)
+                h, c = self.lstm(word_embed, (h, c))  # (batch_size_j, decoder_dim)
                 preds = self.linear(self.dropout(h))  # (batch_size_j, vocab_size)
 
                 _, sampled_word_idx = torch.sort(preds, descending=True)
-                sampled_ids.append(sampled_word_idx[0])
-                if sampled_word_idx[0] is 2:
+                sampled_ids.append(sampled_word_idx[0, 0].long())
+                if sampled_word_idx[0, 0].item() is 2:
                     break
             sampled_sents.append(sampled_ids)
         return sampled_sents

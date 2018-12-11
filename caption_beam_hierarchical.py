@@ -9,7 +9,9 @@ import skimage.transform
 import argparse
 import pickle
 import imageio
-from scipy.misc import imread, imresize
+#from scipy.misc import imread, imresize
+from imageio import imread
+from skimage.transform import resize
 from PIL import Image
 from cnn_rnn_models.cnn_rnn_hierarchical.model_hierarchical import Encoder, CoAttention, MLC, SentenceLSTMDecoder, Embedding, WordLSTMDecoder
 from data_preprocessing.build_vocab import Vocabulary
@@ -38,7 +40,7 @@ def getImageTensor(rad_jimg):
     transform = transforms.Compose([normalize])
 
     # IMAGE
-    image_tensor = torch.zeros(len(paths), 3, 256, 256).to(device)
+    image_tensor = torch.zeros(len(paths), 3, 224, 224).to(device)
 
     for i, path in enumerate(paths):
         #image = Image.open(path).convert('RGB')
@@ -47,7 +49,7 @@ def getImageTensor(rad_jimg):
         if len(img.shape) == 2:
             img = img[:, :, np.newaxis]
             img = np.concatenate([img, img, img], axis=2)
-        img = imresize(img, (256, 256))
+        img = resize(img, (224, 224))
         img = img.transpose(2, 0, 1)
         img = img / 255.
         img = torch.FloatTensor(img).to(device)
@@ -60,28 +62,28 @@ def getImageTensor(rad_jimg):
 
 def main(beam_size=3):
 
-    json_test_images = radimgs_test[:10]
+    json_test_images = radimgs_test[7:10]
 
     # Load models
     encoder = Encoder()
     encoder = encoder.to(device)
-    encoder.load_state_dict(torch.load('./models/encoder-best-cider-hierarchical'))
+    encoder.load_state_dict(torch.load('./models/encoder-best-cider-hierarchical.ckpt'))
 
     embedding = Embedding(vocab_size)
     embedding = embedding.to(device)
-    embedding.load_state_dict(torch.load('./models/embedding-best-cider-hierarchical'))
+    embedding.load_state_dict(torch.load('./models/embedding-best-cider-hierarchical.ckpt'))
 
     mlc = MLC(num_pixels_visual_attention, encoder_dim, embedding, vocab)
     mlc = mlc.to(device)
-    mlc.load_state_dict(torch.load('./models/mlc-best-cider-hierarchical'))
+    mlc.load_state_dict(torch.load('./models/mlc-best-cider-hierarchical.ckpt'))
 
     sent_lstm = SentenceLSTMDecoder(vocab_size)
     sent_lstm.to(device)
-    sent_lstm.load_state_dict(torch.load('./models/sent-lstm-best-cider-hierarchical'))
+    sent_lstm.load_state_dict(torch.load('./models/sent-lstm-best-cider-hierarchical.ckpt'))
 
     word_lstm = WordLSTMDecoder(vocab_size, embedding)
     word_lstm.to(device)
-    word_lstm.load_state_dict(torch.load('./models/word-lstm-best-cider-hierarchical'))
+    word_lstm.load_state_dict(torch.load('./models/word-lstm-best-cider-hierarchical.ckpt'))
 
     encoder.eval()
     embedding.eval()
@@ -91,7 +93,7 @@ def main(beam_size=3):
     for i, jimg in enumerate(json_test_images):
         print('test')
         image_tensor = getImageTensor(jimg)
-        image_tensor.unsqueeze(0)
+        image_tensor = image_tensor.unsqueeze(0)
 
         # Encode images
         encoder_out = encoder(image_tensor)  # resnet-output
@@ -112,9 +114,8 @@ def main(beam_size=3):
         # generate sentences
         sampled_sents = word_lstm.sample_greedy(topic_tensor[0, :counter]) # correct?
 
-        print('Reference radiology report: "{0}"'.format(jimg['paragraph']))
-        print('Generated radiology report: "{0}"'.format(' '.join(sampled_sents)))
+        #print('Reference radiology report: "{0}"'.format(jimg['paragraph']))
+        #print('Generated radiology report: "{0}"'.format(' '.join(sampled_sents)))
 
-
-
-
+if __name__ == '__main__':
+    main()

@@ -11,13 +11,13 @@ import pickle
 import imageio
 from scipy.misc import imread, imresize
 from PIL import Image
-from model_cnnrnn_attention_sgrvinod import Encoder, DecoderWithAttention
-from build_vocab import Vocabulary
+from cnn_rnn_models.cnn_rnn_xu.model_cnnrnn_attention_sgrvinod import Encoder, DecoderWithAttention
+from data_preprocessing.build_vocab import Vocabulary
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def caption_image_beam_search(encoder, decoder, image_path, word_map, beam_size=3):
+def caption_image_beam_search(encoder, decoder, image_paths, word_map, beam_size=3):
     """
     Reads an image and captions it with beam search.
     :param encoder: encoder model
@@ -31,6 +31,21 @@ def caption_image_beam_search(encoder, decoder, image_path, word_map, beam_size=
     k = beam_size
     vocab_size = len(word_map)
 
+    transform = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+
+    image_tensor = torch.zeros(len(image_paths), 3, 224, 224).to(device)
+
+    for i, path in enumerate(image_paths):
+        image = Image.open(path).convert('RGB')
+        if transform is not None:
+            image = transform(image)
+        image_tensor[i] = image.to(device)
+    """
     # Read image and process
     img = imread(image_path)
     if len(img.shape) == 2:
@@ -44,10 +59,10 @@ def caption_image_beam_search(encoder, decoder, image_path, word_map, beam_size=
                                      std=[0.229, 0.224, 0.225])
     transform = transforms.Compose([normalize])
     image = transform(img)  # (3, 256, 256)
-
+    """
     # Encode
-    image = image.unsqueeze(0)  # (1, 3, 256, 256)
-    encoder_out = encoder(image)  # (1, enc_image_size, enc_image_size, encoder_dim)
+    image_tensor = image_tensor.unsqueeze(0)  # (1, 3, 256, 256)
+    encoder_out = encoder(image_tensor)  # (1, enc_image_size, enc_image_size, encoder_dim)
     enc_image_size = encoder_out.size(1)
     encoder_dim = encoder_out.size(3)
 
@@ -186,13 +201,26 @@ def visualize_att(image_path, seq, alphas, rev_word_map, smooth=True):
     plt.show()
 
 
+
+def generate_radiology_reports(jimgs, encoder, decoder,rev_word_map, beam_size=3):
+    for jimg in jimgs:
+        # Encode, decode with attention and beam search
+        seq, alphas = caption_image_beam_search(encoder, decoder, jimg['file_paths'], word_map, args.beam_size)
+        alphas = torch.FloatTensor(alphas)
+        words = [rev_word_map[ind] for ind in seq]
+
+        print('AI-cap:{0}'.format(str(words)))
+        print('Reference radiology report: {0}'.format(' '.join(jimg['paragraph'])))
+
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Show, Attend, and Tell - Tutorial - Generate Caption')
 
     parser.add_argument('--img', '-i', default='./data/Flicker8k_Dataset/667626_18933d713e.jpg',help='path to image')
     parser.add_argument('--model', '-m', help='path to model')
-    parser.add_argument('--encodermodel', type=str, default='./models/encoder-50-attention-final.ckpt', help='path to model')
-    parser.add_argument('--decodermodel', type=str, default='./models/decoder-50-attention-final.ckpt', help='path to model')
+    parser.add_argument('--encodermodel', type=str, default='./models/encoder-best-bleu4.ckpt', help='path to model')
+    parser.add_argument('--decodermodel', type=str, default='./models/decoder-best-bleu4.ckpt', help='path to model')
     parser.add_argument('--word_map', '-wm', default='./data/vocab.pkl', help='path to word map JSON')
     parser.add_argument('--beam_size', '-b', default=5, type=int, help='beam size for beam search')
     parser.add_argument('--dont_smooth', dest='smooth', action='store_false', help='do not smooth alpha overlay')
@@ -221,6 +249,7 @@ if __name__ == '__main__':
     encoder.eval()
     """
     #Load model
+
     encoder = Encoder()
     decoder = DecoderWithAttention(attention_dim=attention_dim,
                                    embed_dim=emb_dim,
@@ -237,12 +266,20 @@ if __name__ == '__main__':
     decoder.load_state_dict(torch.load(args.decodermodel))
 
     #Load test imgs
-    radimgs = json.load(open('./ankle_test_data.json', 'r'))
-    img_path = radimgs[198]['file_paths'][0]
+    radimgs = json.load(open('./ankle_test_data_only_fracture.json', 'r'))
+
+    for jimg in radimgs[:55]:
+        print(jimg['paragraph'])
+        print(jimg['Exam_type'])
+        print(jimg['Prev_frx'])
+    img_paths = radimgs[15]['file_paths']
 
     # Encode, decode with attention and beam search
-    seq, alphas = caption_image_beam_search(encoder, decoder, img_path, word_map, args.beam_size)
-    alphas = torch.FloatTensor(alphas)
+    #seq, alphas = caption_image_beam_search(encoder, decoder, img_paths, word_map, args.beam_size)
+    #alphas = torch.FloatTensor(alphas)
 
     # Visualize caption and attention of best sequence
-    visualize_att(img_path, seq, alphas, rev_word_map, args.smooth)
+    #visualize_att(img_paths[0], seq, alphas, rev_word_map, args.smooth)
+
+    #generate_radiology_reports(radimgs[:55], encoder, decoder, rev_word_map)
+
