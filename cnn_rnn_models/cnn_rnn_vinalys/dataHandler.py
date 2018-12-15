@@ -46,32 +46,16 @@ class FlickrDataset(data.Dataset):
 
     def __getitem__(self, index):
         """Returns one data pair (image and caption)."""
-        #print(index)
-        #start_capindex = self.label_start_ix[index]
-        #end_capindex = self.label_end_ix[index]
         vocab = self.vocab
-        #print(start_capindex.dtype)
-        #print(end_capindex.dtype)
-        #print('startcap: %d' % start_capindex)
-        #print('endcap: %d' % end_capindex)
-        #print('endcap - startcap: %d' % (end_capindex - start_capindex))
-        #num_of_caps = end_capindex - start_capindex
-        #cap_ind = np.randint(start_capindex, end_capindex)
-        #print('cap_ind %d' % cap_ind)
-        #caption = self.labels[cap_ind,:]
-        #image = self.images[index]
+        paths = self.img_data[index]['file_paths']
+        caption = self.img_data[index]['paragraph'][0]
 
-        #path = self.img_data[index]['id'] + '.jpg'
-
-        num_imgs = len(self.img_data[index]['file_paths'])
-        path = self.img_data[index]['file_paths'][random.randint(0,num_imgs-1)]
-        num_cap = len(self.img_data[index]['captions'])
-        caption = self.img_data[index]['captions'][random.randint(0,num_cap-1)]
-
-        #image = Image.open(os.path.join(self.root, path)).convert('RGB')
-        image = Image.open(path).convert('RGB')
-        if self.transform is not None:
-            image = self.transform(image)
+        image_tensor = torch.zeros(len(paths), 3, 224, 224)
+        for i, path in enumerate(paths):
+            image = Image.open(path).convert('RGB')
+            if self.transform is not None:
+                image = self.transform(image)
+            image_tensor[i] = image
 
         # Convert caption (string) to word ids.
         tokens = nltk.tokenize.word_tokenize(str(caption).lower())
@@ -81,31 +65,7 @@ class FlickrDataset(data.Dataset):
         caption.append(vocab('<end>'))
         target = torch.Tensor(caption)
 
-        #caption_torch = torch.from_numpy(caption.astype(float))
-        #image_torch = torch.from_numpy(image.astype(float))
-
-        """
-        coco = self.coco
-        vocab = self.vocab
-        ann_id = self.ids[index]
-        caption = coco.anns[ann_id]['caption']
-        img_id = coco.anns[ann_id]['image_id']
-        path = coco.loadImgs(img_id)[0]['file_name']
-
-        image = Image.open(os.path.join(self.root, path)).convert('RGB')
-        if self.transform is not None:
-            image = self.transform(image)
-
-        # Convert caption (string) to word ids.
-        tokens = nltk.tokenize.word_tokenize(str(caption).lower())
-        caption = []
-        caption.append(vocab('<start>'))
-        caption.extend([vocab(token) for token in tokens])
-        caption.append(vocab('<end>'))
-        target = torch.Tensor(caption)
-        return image, target
-        """
-        return image, target
+        return image_tensor, target
 
     def __len__(self):
         return len(self.img_data)
@@ -165,8 +125,12 @@ def collate_fn(data):
     data.sort(key=lambda x: len(x[1]), reverse=True)
     images, captions = zip(*data)
 
-    # Merge images (from tuple of 3D tensor to 4D tensor).
-    images = torch.stack(images, 0)
+
+    num_imgs = [len(img_tuple) for img_tuple in images]
+    images_tensor = torch.zeros(len(images), max(num_imgs), 3, 224, 224)
+
+    for i, images_tup in enumerate(images):
+        images_tensor[i, :num_imgs[i], :, :, :] = images_tup
 
     # Merge captions (from tuple of 1D tensor to 2D tensor).
     lengths = [len(cap) for cap in captions]
@@ -174,7 +138,7 @@ def collate_fn(data):
     for i, cap in enumerate(captions):
         end = lengths[i]
         targets[i, :end] = cap[:end]
-    return images, targets, lengths
+    return images_tensor, targets, lengths
 
 
 def get_loader(root, json_imgs, vocab, transform, batch_size, shuffle, num_workers, ):
@@ -187,13 +151,13 @@ def get_loader(root, json_imgs, vocab, transform, batch_size, shuffle, num_worke
     # captions: a tensor of shape (batch_size, padded_length).
     # lengths: a list indicating valid length for each caption. length is (batch_size).
 
-    weights = make_weights_for_balanced_classes(json_imgs, 2)
-    weights = torch.DoubleTensor(weights)
-    sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
+    #weights = make_weights_for_balanced_classes(json_imgs, 2)
+    #weights = torch.DoubleTensor(weights)
+    #sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
 
     data_loader = torch.utils.data.DataLoader(dataset=flickr,
                                               batch_size=batch_size,
-                                              sampler=sampler,
+                                              shuffle=shuffle,
                                               num_workers=num_workers,
                                               collate_fn=collate_fn)
     return data_loader

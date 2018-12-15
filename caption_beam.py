@@ -210,7 +210,7 @@ def generate_radiology_reports(jimgs, encoder, decoder,rev_word_map, beam_size=3
         words = [rev_word_map[ind] for ind in seq]
 
         print('AI-cap:{0}'.format(str(words)))
-        print('Reference radiology report: {0}'.format(' '.join(jimg['paragraph'])))
+        print('Reference radiology report: {0}'.format(jimg['paragraph'][0]))
 
 
 
@@ -266,14 +266,14 @@ if __name__ == '__main__':
     decoder.load_state_dict(torch.load(args.decodermodel))
 
     #Load test imgs
-    radimgs = json.load(open('./ankle_test_data_only_fracture.json', 'r'))
-
+    radimgs = json.load(open('./ankle_test_data_only_fracture_without_checkup.json', 'r'))
+    """
     for jimg in radimgs[:55]:
         print(jimg['paragraph'])
         print(jimg['Exam_type'])
         print(jimg['Prev_frx'])
     img_paths = radimgs[15]['file_paths']
-
+    """
     # Encode, decode with attention and beam search
     #seq, alphas = caption_image_beam_search(encoder, decoder, img_paths, word_map, args.beam_size)
     #alphas = torch.FloatTensor(alphas)
@@ -281,5 +281,5 @@ if __name__ == '__main__':
     # Visualize caption and attention of best sequence
     #visualize_att(img_paths[0], seq, alphas, rev_word_map, args.smooth)
 
-    #generate_radiology_reports(radimgs[:55], encoder, decoder, rev_word_map)
+    generate_radiology_reports(radimgs[55:70], encoder, decoder, rev_word_map)
 

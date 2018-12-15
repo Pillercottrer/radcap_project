@@ -14,13 +14,38 @@ class EncoderCNN(nn.Module):
         self.linear = nn.Linear(resnet.fc.in_features, embed_size)
         self.bn = nn.BatchNorm1d(embed_size, momentum=0.01)
 
+
     def forward(self, images):
         """Extract feature vectors from input images."""
-        with torch.no_grad():
-            features = self.resnet(images)
-        features = features.reshape(features.size(0), -1)
-        features = self.bn(self.linear(features))
-        return features
+        #with torch.no_grad():
+            #features = self.resnet(images)
+        #features = features.reshape(features.size(0), -1)
+        #features = self.bn(self.linear(features))
+
+        out_list = []
+        for i in range(images.size(1)):  # Loop over all images
+            with torch.no_grad():
+                out_i = self.resnet(images[:, i])
+            out_i = out_i.reshape(out_i.size(0), -1)
+            out_i = self.bn(self.linear(out_i))
+            out_list.append(out_i.unsqueeze(1))
+        out = torch.cat(out_list, 1)
+        out, _ = torch.max(out, 1)
+        #out = out.reshape(out.size(0), -1)
+        #out = self.bn(self.linear(out))
+        return out
+
+    def fine_tune(self, fine_tune=True):
+        """
+        Allow or prevent the computation of gradients for convolutional blocks 2 through 4 of the encoder.
+        :param fine_tune: Allow?
+        """
+        for p in self.resnet.parameters():
+            p.requires_grad = False
+        # If fine-tuning, only fine-tune convolutional blocks 2 through 4
+        for c in list(self.resnet.children())[5:]:
+            for p in c.parameters():
+                p.requires_grad = fine_tune
 
 
 class DecoderRNN(nn.Module):
@@ -51,14 +76,7 @@ class DecoderRNN(nn.Module):
             _, predicted = outputs.max(1)  # predicted:
             sampled_ids.append(predicted)
             inputs = self.embed(predicted)  # inputs: (batch_size, embed_size)
-            #print(inputs.shape)
             inputs = inputs.unsqueeze(1)  # inputs: (batch_size, 1, embed_size)
-            #print(inputs.shape)
-
-            sorted, indices = torch.sort(outputs, descending=True)
-            predicted = indices[0][:3]
-            inputs_test = self.embed(predicted)
-            #print(inputs_test.shape)
         sampled_ids = torch.stack(sampled_ids, 1)  # sampled_ids: (batch_size, max_seq_length)
         return sampled_ids
 

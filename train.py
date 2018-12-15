@@ -8,9 +8,9 @@ import pickle
 import random
 import copy
 import time
-from dataHandler import get_loader
-from build_vocab import Vocabulary
-from model_cnn_rnn import EncoderCNN, DecoderRNN
+from cnn_rnn_models.cnn_rnn_vinalys.dataHandler import get_loader
+from data_preprocessing.build_vocab import Vocabulary
+from cnn_rnn_models.cnn_rnn_vinalys.model_cnn_rnn import EncoderCNN, DecoderRNN
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 from torch.optim import lr_scheduler
@@ -78,22 +78,44 @@ def main(args):
     #image_datasets['test'] = test_imgs
     """
     #Radiology
-    radimgs = json.load(open('./radcap_bodypartsplit_data.json', 'r'))
+    radimgs = json.load(open('./data_preprocessing/radcap_bodypartsplit_data.json', 'r'))
     radimgs_ankle = radimgs['ankle']
+    radimgs_wrist = radimgs['wrist']
     random.shuffle(radimgs_ankle)
-    len_train = int(round(0.7 * len(radimgs_ankle)))
-    len_val = int(round(0.20 * len(radimgs_ankle)))
+    random.shuffle(radimgs_wrist)
+    radimgs_fracture_ankle = []
+    radimgs_fracture_wrist = []
 
-    train_imgs = radimgs_ankle[:len_train]
-    val_imgs = radimgs_ankle[len_train:len_train + len_val]
-    test_imgs = radimgs_ankle[len_train + len_val:]
+    for jimg in radimgs_ankle:
+        if int(jimg['Fracture']) > 0 and int(jimg['Implant']) < 0:
+            # radimgs_fracture.append(jimg)
+            if 'oförändra' not in jimg['paragraph'][0] and 'Oförändra' not in jimg['paragraph'][0]:
+                radimgs_fracture_ankle.append(jimg)
 
-    json.dump(test_imgs, open('ankle_test_data.json', 'w'))
+    for jimg in radimgs_wrist:
+        if int(jimg['Fracture']) > 0 and int(jimg['Implant']) < 0:
+            #radimgs_fracture_wrist.append(jimg)
+            if 'jämfört' not in jimg['paragraph'][0] and 'Jämfört' not in jimg['paragraph'][0] and 'NA' not in jimg['paragraph'][0] and 'Na' not in jimg['paragraph'][0] and 'na' not in jimg['paragraph'][0]:
+                radimgs_fracture_wrist.append(jimg)
+
+
+
+
+    len_train = int(round(0.7 * len(radimgs_fracture_wrist)))
+    len_val = int(round(0.20 * len(radimgs_fracture_wrist)))
+
+    train_imgs = radimgs_fracture_wrist[:len_train]
+    val_imgs = radimgs_fracture_wrist[len_train:len_train + len_val]
+    test_imgs = radimgs_fracture_wrist[len_train + len_val:]
+
+    #json.dump(test_imgs, open('wrist_test_data.json', 'w'))
 
     image_datasets = {}
     image_datasets['train'] = train_imgs
     image_datasets['val'] = val_imgs
     image_datasets['test'] = test_imgs
+
+    json.dump(test_imgs, open('wrist_test_data_only_fracture_mostly_without_checkup.json', 'w'))
 
     #Image preprocessing, normalization for the pretrained resnet
     transform = transforms.Compose([
@@ -129,6 +151,7 @@ def main(args):
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
     params = list(decoder.parameters()) + list(encoder.linear.parameters()) + list(encoder.bn.parameters())
+    #params = list(decoder.parameters()) + list(encoder.parameters())
     optimizer = torch.optim.Adam(params, lr=args.learning_rate)
 
     # Decay LR by a factor of 0.1 every 7 epochs
@@ -233,9 +256,9 @@ def main(args):
 
     # Save the model checkpoints
     torch.save(best_model_decoder_wts, os.path.join(
-        args.model_path, 'decoder-{}-{}.ckpt'.format(epoch + 1, i + 1)))
+        args.model_path, 'decoder-{}-{}.ckpt'.format('Vinalys', 'wrist-end')))
     torch.save(best_model_encoder_wts, os.path.join(
-        args.model_path, 'encoder-{}-{}.ckpt'.format(epoch + 1, i + 1)))
+        args.model_path, 'encoder-{}-{}.ckpt'.format('Vinalys', 'wrist-end')))
 
 
 if __name__ == '__main__':
@@ -254,7 +277,7 @@ if __name__ == '__main__':
     parser.add_argument('--hidden_size', type=int, default=512, help='dimension of lstm hidden states')
     parser.add_argument('--num_layers', type=int, default=1, help='number of layers in lstm')
 
-    parser.add_argument('--num_epochs', type=int, default=5)
+    parser.add_argument('--num_epochs', type=int, default=10)
     parser.add_argument('--batch_size', type=int, default=20)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--learning_rate', type=float, default=0.001)

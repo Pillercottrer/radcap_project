@@ -135,7 +135,8 @@ def main():
 
     for jimg in radimgs_ankle:
         if int(jimg['Fracture']) > 0 and int(jimg['Implant']) < 0:
-            if 'Oförändra' not in jimg['paragraph'][0]:
+            #radimgs_fracture.append(jimg)
+            if 'oförändra' not in jimg['paragraph'][0] and 'Oförändra' not in jimg['paragraph'][0]:
                 radimgs_fracture.append(jimg)
 
 

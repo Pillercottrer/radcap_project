@@ -31,11 +31,7 @@ class dataset(data.Dataset):
     def __getitem__(self, index):
         """Returns one data pair (image and caption)."""
         vocab = self.vocab
-        #path = self.img_data[index]['id'] + '.jpg'
-        #path = self.img_data[index]['filepath'] #Flickr
         paths = self.img_data[index]['file_paths'] #radiology
-        #num_cap = len(self.img_data[index]['captions'])
-        #caption = self.img_data[index]['captions'][random.randint(0, num_cap-1)]
 
         #image = Image.open(os.path.join(self.root, path)).convert('RGB')
         image_tensor = torch.zeros(len(paths), 3, 224, 224)
@@ -45,7 +41,7 @@ class dataset(data.Dataset):
             if self.transform is not None:
                 image = self.transform(image)
             image_tensor[i] = image
-
+        """
         #rad_combined_tensor, _ = torch.max(image_tensor, 0)
         paragraph = []
         for i, sent in enumerate(self.img_data[index]['paragraph']):
@@ -59,7 +55,13 @@ class dataset(data.Dataset):
             #target = torch.Tensor(caption)
         test = vocab('<end>')
         paragraph.append(vocab('<end>'))
-        target = torch.Tensor(paragraph)
+        """
+        rad_report = []
+        rad_report.append(vocab('<start>'))
+        tokens = nltk.tokenize.word_tokenize(str(self.img_data[index]['paragraph'][0]).lower())
+        rad_report.extend([vocab(token) for token in tokens])
+        rad_report.append(vocab('<end>'))
+        target = torch.Tensor(rad_report)
         return image_tensor, target
 
 
