@@ -4,6 +4,7 @@ It is based on different implementations of the CNN-RNN design. Each implementat
 There is also code in the radcap_project/data_preprocessing/ folder for creating the vocabulary.
 
 To train the network run the train file
+
 To generate captions run the caption generation file. 
 
 Implementations:
