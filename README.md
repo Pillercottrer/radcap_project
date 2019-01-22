@@ -1,9 +1,10 @@
 # radcap_project
 This is code for a project in medical school trying to automate descriptions of medical images. 
-It is based on different implementations of the CNN-RNN design. Each implementation has one python file for the model, one file toprepare the data in batches, one file to train the network and one file to generate captions with the trained network. 
+It is based on different implementations of the CNN-RNN design. Each implementation has one python file for the model, one file to prepare the data in batches, one file to train the network and one file to generate captions with the trained network. 
 There is also code in the radcap_project/data_preprocessing/ folder for creating the vocabulary.
 
-To train the network run the train file and to generate captions run the caption generation file. 
+To train the network run the train file
+To generate captions run the caption generation file. 
 
 Implementations:
 1. The CNN-RNN from the paper "Show and tell" https://arxiv.org/abs/1411.4555
