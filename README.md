@@ -1,7 +1,7 @@
 # radcap_project
 This is code for a project in medical school trying to automate descriptions of medical images. 
 It is based on different implementations of the CNN-RNN design. Each implementation has one python file for the model, one file to prepare the data in batches, one file to train the network and one file to generate captions with the trained network. 
-There is also code in the radcap_project/data_preprocessing/ folder for creating the vocabulary.
+There is also code in the radcap_project/data_preprocessing/ folder for creating the vocabulary. The file radcap_bodypartsplit_data.json, which should by in the preproccessing folder, contains specific information for my dataset. Use your own datafile there instead and chance the code to read your data.
 
 To train the network run the train file.
 
